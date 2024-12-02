@@ -1,2 +1,10 @@
 streamlit~=1.40.1
 pillow~=11.0.0
+clearml
+catboost
+scikit-learn
+pandas
+numpy
+tqdm
+nltk
+scipy
