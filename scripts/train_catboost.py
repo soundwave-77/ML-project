@@ -14,7 +14,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedKFold
 from catboost import CatBoostRegressor, Pool
 from tqdm import tqdm
+from clearml import Task
 
+task = Task.init(project_name='avito_sales_prediction', task_name='train')
 
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
@@ -112,7 +114,11 @@ pred = model.predict(X_test)
 deal_probability = np.clip(pred, 0, 1)
 # sample_sub.to_csv('sub.csv', index=False)
 
-
 print("======= Report Metrics ========")
 
 print(f"RMSE: {rmse(y, oof_predictions)}")
+
+
+print("======= Save Model ========")
+
+model.save_model('model.cbm')
