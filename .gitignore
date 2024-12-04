@@ -1,3 +1,4 @@
 .vscode/
 .idea/
 *.csv
+/data/
