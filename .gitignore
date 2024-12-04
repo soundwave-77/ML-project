@@ -2,3 +2,5 @@
 .idea/
 *.csv
 /data/
+models/*
+/catboost_info/
