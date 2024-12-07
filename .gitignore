@@ -4,3 +4,4 @@
 /data/
 models/*
 /catboost_info/
+/outputs/
