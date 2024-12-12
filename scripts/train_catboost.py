@@ -12,6 +12,8 @@ from catboost.utils import get_gpu_device_count
 from tqdm import tqdm
 import optuna
 from clearml import Task
+import json
+import pickle
 
 
 # NLTK stopwords download
@@ -20,6 +22,48 @@ nltk.download('stopwords')
 
 def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
+
+
+def load_embeddings(filepath: str):
+    """
+        Returns an array with keys as item_ids and values as embeddings
+
+        ~/Yandex.Disk/hse_ml_avito/vector_store/resnet/embeddings_train_merged.npz
+    """
+    embed = np.load(filepath)
+    return embed  # keys: ['embeddings', 'images'] 
+
+
+def load_text_embeddings(filepath: str):
+    """
+        Returns a dictionary with keys as item_ids and values as embeddings
+
+        ~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.json
+    """
+    with open(filepath, "r") as f:
+        data = json.load(f)
+    return data
+
+
+def load_text_pickle(filepath: str):
+    """
+        Returns a dictionary with keys as item_ids and values as embeddings
+
+        ~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.pkl
+    """
+    with open(filepath, "rb") as f:
+        data = pickle.load(f)
+    return data
+
+
+def load_text_parquet(filepath: str):
+    """
+        Returns a dataframe with index as item_id and column for embeddings
+
+        ~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.parquet
+    """
+    df = pd.read_parquet(filepath)
+    return df
 
 
 def load_and_preprocess_data(train_path, test_path):
