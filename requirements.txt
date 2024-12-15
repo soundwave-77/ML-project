@@ -2,6 +2,7 @@ streamlit~=1.40.1
 pillow~=11.0.0
 clearml
 catboost
+lightgbm
 scikit-learn
 pandas
 numpy
