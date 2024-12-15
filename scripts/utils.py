@@ -19,8 +19,7 @@ def rmse(predictions, targets):
     return np.sqrt(((predictions - targets) ** 2).mean())
 
 
-def save_feature_importance(model, X, task, task_name: str, model_name: str):
-    feature_importances = model.get_feature_importance()
+def save_feature_importance(feature_importances, X, task, task_name: str, model_name: str):
     feature_names = X.columns
     importance_df = pd.DataFrame(
         {"feature": feature_names, "importance": feature_importances}
