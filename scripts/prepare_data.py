@@ -90,6 +90,32 @@ def load_and_preprocess_data(data_path: Path, add_text_features: bool = False):
     return X, y, cat_features
 
 
+def preprocess_data_ridge(df_train):
+    print('==== Preparing Data ====')
+
+    df_train.drop(['image', 'item_id', 'user_id', 'activation_date', 'title', 'description'], axis=1, inplace=True)
+    
+    # Count encoding
+    cat_features = df_train.select_dtypes(include='object').columns
+    for col in cat_features:
+        df_train[col] = df_train[col].fillna('')
+
+    for col in cat_features:
+        count_map = df_train[col].value_counts().to_dict()
+        df_train[col] = df_train[col].map(count_map)
+
+    num_features = df_train.select_dtypes(include='number').columns
+    for col in num_features:
+        df_train[col] = df_train[col].fillna(df_train[col].median())
+
+    X = df_train.drop(columns=['deal_probability'])
+    y = df_train['deal_probability']
+
+    print('==== Data preprocessed successfully! ====')
+
+    return X, y
+
+
 if __name__ == "__main__":
     X, y, cat_features = load_and_preprocess_data("data/raw/train.csv")
     print(X.head(3))
