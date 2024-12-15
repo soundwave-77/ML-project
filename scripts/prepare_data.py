@@ -1,5 +1,9 @@
 # %%
+from pathlib import Path
+
 import pandas as pd
+
+from embedding_utils import load_text_embeddings_json
 
 pd.set_option("display.max_columns", None)
 
@@ -18,12 +22,10 @@ def fill_missing_values(df, cols):
     return df
 
 
-def load_and_preprocess_data(data_path):
+def load_and_preprocess_data(data_path: Path, add_text_features: bool = False):
     # %%
-
     print("==== Preparing Data ====")
-
-    data_path = "data/raw/train.csv"
+    # data_path = "../data/raw/train.csv"
     df = pd.read_csv(data_path)
     # prepare price column
     df = prepare_price_col(df)
@@ -33,6 +35,20 @@ def load_and_preprocess_data(data_path):
     # convert image_top_1 to string
     df["image_top_1"] = df["image_top_1"].astype("str")
 
+    # %%
+    if add_text_features:
+        print("==== Adding text features ====")
+        embed_path = Path(
+            "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.json"
+        ).expanduser()
+
+        # add text features
+        text_embeddings = load_text_embeddings_json(embed_path)
+        embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
+        embeddings_df = embeddings_df.rename(columns=lambda x: f"embedding_{x+1}")
+        df = df.join(embeddings_df, how="left")
+
+    # %%
     # drop unused(for now) columns
     # 'params', 'price_log', 'deal_prob_cat',
     drop_cols = [
@@ -61,6 +77,11 @@ def load_and_preprocess_data(data_path):
         "user_type",
         "image_top_1",
     ]
-    print(X.head())
-    print(y.head())
     return X, y, cat_features
+
+
+if __name__ == "__main__":
+    X, y, cat_features = load_and_preprocess_data("data/raw/train.csv")
+    print(X.head(3))
+    print(y.head(3))
+    print(cat_features)
