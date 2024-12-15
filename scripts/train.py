@@ -57,7 +57,7 @@ def train_lightgbm(X_train, y_train, X_val, y_val, **params):
     return model
 
 
-def train_model(model_name, task_name, X, y, cat_features):
+def train_model(model_name, task_name, X, y, cat_features=None):
     # Initialize ClearML task
     task = Task.init(project_name="avito_sales_prediction", task_name=task_name)
 
@@ -73,7 +73,7 @@ def train_model(model_name, task_name, X, y, cat_features):
 
     # Cross-validation
     scores = []
-    skf = KFold(n_splits=3, shuffle=True, random_state=42)
+    skf = KFold(n_splits=2, shuffle=True, random_state=42)
     FOLD_LIST = list(skf.split(X, y))
 
     for train_idx, val_idx in tqdm(FOLD_LIST):
@@ -153,13 +153,9 @@ def train_model(model_name, task_name, X, y, cat_features):
     if model_name == "CatBoost":
         final_checkpoint_path = ckpt_root / "final_model.cbm"
         model.save_model(final_checkpoint_path)
-    elif model_name == "Ridge":
+    elif model_name in ["Ridge", "LightGBM"]:
         final_checkpoint_path = ckpt_root / "final_model.joblib"
         joblib.dump(model, final_checkpoint_path)
-    elif model_name == "LightGBM":
-        final_checkpoint_path = ckpt_root / "final_model.lgb"
-        model.save_model(final_checkpoint_path)
-    return model, rmse_score
 
 
 if __name__ == "__main__":
@@ -183,13 +179,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.model_name in ["Ridge", "LightGBM"]:
-        X, y, cat_features = preprocess_data_ridge(
-            args.train_path, add_text_features=False
+        data = preprocess_data_ridge(
+            args.train_path
         )
     elif args.model_name == "CatBoost":
-        X, y, cat_features = load_and_preprocess_data(
+        data = load_and_preprocess_data(
             args.train_path,
             add_text_features=True,
             # add_image_features=True,
         )
+    X, y, cat_features = data["X"], data["y"], data["cat_features"]
     train_model(args.model_name, args.task_name, X, y, cat_features)

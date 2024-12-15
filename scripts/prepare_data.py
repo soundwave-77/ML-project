@@ -102,11 +102,12 @@ def load_and_preprocess_data(
         "user_type",
         "image_top_1",
     ]
-    return X, y, cat_features
+    return {"X": X, "y": y, "cat_features": cat_features}
 
 
-def preprocess_data_ridge(df_train):
+def preprocess_data_ridge(data_path: Path):
     print("==== Preparing Data ====")
+    df_train = pd.read_csv(data_path)
 
     df_train.drop(
         ["image", "item_id", "user_id", "activation_date", "title", "description"],
@@ -132,11 +133,11 @@ def preprocess_data_ridge(df_train):
 
     print("==== Data preprocessed successfully! ====")
 
-    return X, y
+    return {"X": X, "y": y, "cat_features": cat_features}
 
 
 if __name__ == "__main__":
-    X, y, cat_features = load_and_preprocess_data("data/raw/train.csv")
-    print(X.head(3))
-    print(y.head(3))
-    print(cat_features)
+    data = load_and_preprocess_data("data/raw/train.csv")
+    print(data["X"].head(3))
+    print(data["y"].head(3))
+    print(data["cat_features"])
