@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.embeddings.loader import load_text_embeddings_json, load_embeddings
+from src.embeddings.loader import load_text_embeddings_json, load_embeddings, load_text_embeddings_h5
 
 pd.set_option("display.max_columns", None)
 
@@ -37,7 +37,8 @@ def load_and_preprocess_data(
     model_name: str,
     data_path: Path,
     add_text_features: bool = False,
-    add_image_features: bool = False
+    add_image_features: bool = False,
+    use_reduced_rubert_embeddings: bool = False,
 ):
     # %%
     print("==== Preparing Data ====")
@@ -52,27 +53,38 @@ def load_and_preprocess_data(
     # %%
     if add_text_features:
         print("==== Adding text features ====")
-        # add title embeddings
-        embed_path = Path(
-            "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.json"
-        ).expanduser()
 
-        # add text features
-        text_embeddings = load_text_embeddings_json(embed_path)
-        embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
-        embeddings_df = embeddings_df.rename(columns=lambda x: f"title_embedding_{x+1}")
-        df = df.join(embeddings_df, how="left")
+        if use_reduced_rubert_embeddings:
+            # add title embeddings
+            embed_path = Path(
+                "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.json"
+            ).expanduser()
 
-        # add description embeddings
-        embed_path = Path(
-            "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/description_embeddings_reduced_train.json"
-        ).expanduser()
-        text_embeddings = load_text_embeddings_json(embed_path)
-        embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
-        embeddings_df = embeddings_df.rename(
-            columns=lambda x: f"description_embedding_{x+1}"
-        )
-        df = df.join(embeddings_df, how="left")
+            # add text features
+            text_embeddings = load_text_embeddings_json(embed_path)
+            embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
+            embeddings_df = embeddings_df.rename(columns=lambda x: f"title_embedding_{x+1}")
+            df = df.join(embeddings_df, how="left")
+
+            # add description embeddings
+            embed_path = Path(
+                "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/description_embeddings_reduced_train.json"
+            ).expanduser()
+            text_embeddings = load_text_embeddings_json(embed_path)
+            embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
+            embeddings_df = embeddings_df.rename(
+                columns=lambda x: f"description_embedding_{x+1}"
+            )
+            df = df.join(embeddings_df, how="left")
+        else:
+            # add title embeddings
+            embed_path = Path(
+                "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_train.h5"
+            ).expanduser()
+
+            # add text features
+            text_embeddings_df = load_text_embeddings_h5(embed_path, "title")
+            df = df.join(text_embeddings_df, how="left")
 
     if add_image_features:
         print("==== Adding image features ====")

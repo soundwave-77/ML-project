@@ -113,9 +113,9 @@ def train_model(model_name, task_name, X, y):
         scores.append({"rmse": score, "mae": mae, "r2": r2})
 
     scores = {
-        "rmse": np.mean([score["rmse"] for score in scores]),
-        "mae": np.mean([score["mae"] for score in scores]),
-        "r2": np.mean([score["r2"] for score in scores]),
+        "cv_rmse": np.mean([score["rmse"] for score in scores]),
+        "cv_mae": np.mean([score["mae"] for score in scores]),
+        "cv_r2": np.mean([score["r2"] for score in scores]),
     }
     for key, value in scores.items():
         logger.report_single_value(name=key, value=value)
@@ -177,11 +177,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    data = load_and_preprocess_data(
-        args.model_name,
-        args.train_path,
-        add_text_features=False,
-        add_image_features=False,
-    )
-    X, y = data["X"], data["y"]
-    train_model(args.model_name, args.task_name, X, y)
+    if args.model_name in ["Ridge", "LightGBM"]:
+        data = preprocess_data_ridge(
+            args.train_path
+        )
+    elif args.model_name == "CatBoost":
+        data = load_and_preprocess_data(
+            args.train_path,
+            add_text_features=True,
+            add_image_features=False,
+            use_reduced_rubert_embeddings=False,
+        )
+    X, y, cat_features = data["X"], data["y"], data["cat_features"]
+    train_model(args.model_name, args.task_name, X, y, cat_features)
