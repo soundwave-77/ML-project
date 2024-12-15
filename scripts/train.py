@@ -17,7 +17,8 @@ from sklearn.preprocessing import StandardScaler
 from prepare_data import load_and_preprocess_data, preprocess_data_ridge
 from src.utils import is_gpu_available, rmse, save_feature_importance
 
-Task.set_offline(True)
+# to disable clearml for debugging
+# Task.set_offline(True)
 
 
 def train_catboost(cat_features, X_train, y_train, X_val=None, y_val=None):
