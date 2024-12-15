@@ -38,6 +38,7 @@ def load_and_preprocess_data(data_path: Path, add_text_features: bool = False):
     # %%
     if add_text_features:
         print("==== Adding text features ====")
+        # add title embeddings
         embed_path = Path(
             "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.json"
         ).expanduser()
@@ -45,7 +46,16 @@ def load_and_preprocess_data(data_path: Path, add_text_features: bool = False):
         # add text features
         text_embeddings = load_text_embeddings_json(embed_path)
         embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
-        embeddings_df = embeddings_df.rename(columns=lambda x: f"embedding_{x+1}")
+        embeddings_df = embeddings_df.rename(columns=lambda x: f"title_embedding_{x+1}")
+        df = df.join(embeddings_df, how="left")
+
+        # add description embeddings
+        embed_path = Path(
+            "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/description_embeddings_reduced_train.json"
+        ).expanduser()
+        text_embeddings = load_text_embeddings_json(embed_path)
+        embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
+        embeddings_df = embeddings_df.rename(columns=lambda x: f"description_embedding_{x+1}")
         df = df.join(embeddings_df, how="left")
 
     # %%
