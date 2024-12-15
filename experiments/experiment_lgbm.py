@@ -6,7 +6,6 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
 from lightgbm import early_stopping, log_evaluation
-import lightgbm as lgb
 from lightgbm import LGBMRegressor
 from tqdm import tqdm
 from clearml import Task

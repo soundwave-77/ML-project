@@ -4,7 +4,6 @@ import argparse
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import StratifiedKFold
 from catboost import CatBoostRegressor, Pool
 from catboost.utils import get_gpu_device_count
@@ -19,14 +18,20 @@ def rmse(predictions, targets):
 def preprocess_data(df_train):
     print('==== Preparing Data ====')
 
-    df_train['price'] = df_train['price'].fillna(df_train['price'].mean())
+    df_train.drop(['image', 'item_id', 'user_id', 'activation_date', 'title', 'description'], axis=1, inplace=True)
 
-    for col in ['param_1', 'param_2', 'param_3', 'image_top_1', 'title', 'description']:
+    # Count encoding
+    cat_features = df_train.select_dtypes(include='object').columns
+    for col in cat_features:
         df_train[col] = df_train[col].fillna('')
 
-    df_train['image_top_1'] = df_train['image_top_1'].astype('str')
+    for col in cat_features:
+        count_map = df_train[col].value_counts().to_dict()
+        df_train[col] = df_train[col].map(count_map)
 
-    df_train.drop(['image', 'item_id', 'user_id', 'activation_date', 'title', 'description'], axis=1, inplace=True)
+    num_features = df_train.select_dtypes(include='number').columns
+    for col in num_features:
+        df_train[col] = df_train[col].fillna(df_train[col].median())
 
     X = df_train.drop(columns=['deal_probability'])
     y = df_train['deal_probability']
@@ -44,7 +49,7 @@ def train_model(model_name, task_name, X, y, cat_features):
         'model_name': model_name,
         'dataset_size': X.shape,
         'numerical_features': X.select_dtypes(include='number').columns.to_list(),
-        'categorical_features': cat_features
+        'categorical_features': X.select_dtypes(include='object').columns.to_list(),
     })
 
     # Cross-validation
@@ -57,8 +62,8 @@ def train_model(model_name, task_name, X, y, cat_features):
         X_train, y_train = X.loc[train_idx], y.loc[train_idx]
         X_val, y_val = X.loc[val_idx], y.loc[val_idx]
 
-        train_pool = Pool(X_train, y_train, cat_features=cat_features)
-        eval_pool = Pool(X_val, y_val, cat_features=cat_features)
+        train_pool = Pool(X_train, y_train)
+        eval_pool = Pool(X_val, y_val)
 
         model = CatBoostRegressor(task_type='GPU' if is_gpu_available() else 'CPU',
                                   metric_period=50,
@@ -79,7 +84,7 @@ def train_model(model_name, task_name, X, y, cat_features):
         task_type='GPU' if is_gpu_available() else 'CPU',
         metric_period=50,
         early_stopping_rounds=5)
-    model.fit(X, y, cat_features=cat_features)
+    model.fit(X, y)
 
     params = model.get_params()
     # Log hyperparameters to ClearML
@@ -141,14 +146,11 @@ def save_feature_importance(model, model_name, X, task):
 
 
 def main(df_train, model_name, task_name):
-    cat_features = ['region', 'city', 'parent_category_name', 'category_name', 
-                    'param_1', 'param_2', 'param_3', 'user_type', 'image_top_1']
-
     # Preprocess data
     X, y = preprocess_data(df_train)
 
     # Train the model with hyperparameter optimization
-    model, rmse = train_model(model_name, task_name, X, y, cat_features)
+    model, rmse = train_model(model_name, task_name, X, y)
     print(f'Train RMSE: {rmse}')
 
 
