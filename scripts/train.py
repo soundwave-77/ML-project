@@ -99,7 +99,7 @@ def train_model(model_name, task_name, X, y, cat_features):
         r2 = r2_score(y_val, preds)
         scores.append({"rmse": score, "mae": mae, "r2": r2})
 
-    task.report_single_value(name="mean_rmse_across_folds", value=np.mean(scores))
+    logger.report_single_value(name="mean_rmse_across_folds", value=np.mean(scores))
 
     # Evaluate final model
     X_train_final, X_val_final, y_train_final, y_val_final = train_test_split(
