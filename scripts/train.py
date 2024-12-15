@@ -19,6 +19,7 @@ from src.utils import is_gpu_available, rmse, save_feature_importance
 
 Task.set_offline(True)
 
+
 def train_catboost(cat_features, X_train, y_train, X_val=None, y_val=None):
     task_type = "GPU" if is_gpu_available() else "CPU"
     print(f"Using {task_type} for training")

@@ -22,7 +22,9 @@ def fill_missing_values(df, cols):
     return df
 
 
-def load_and_preprocess_data(data_path: Path, add_text_features: bool = False, add_image_features: bool = False):
+def load_and_preprocess_data(
+    data_path: Path, add_text_features: bool = False, add_image_features: bool = False
+):
     # %%
     print("==== Preparing Data ====")
     # data_path = "../data/raw/train.csv"
@@ -55,7 +57,9 @@ def load_and_preprocess_data(data_path: Path, add_text_features: bool = False, a
         ).expanduser()
         text_embeddings = load_text_embeddings_json(embed_path)
         embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
-        embeddings_df = embeddings_df.rename(columns=lambda x: f"description_embedding_{x+1}")
+        embeddings_df = embeddings_df.rename(
+            columns=lambda x: f"description_embedding_{x+1}"
+        )
         df = df.join(embeddings_df, how="left")
 
     if add_image_features:
@@ -102,27 +106,31 @@ def load_and_preprocess_data(data_path: Path, add_text_features: bool = False, a
 
 
 def preprocess_data_ridge(df_train):
-    print('==== Preparing Data ====')
+    print("==== Preparing Data ====")
 
-    df_train.drop(['image', 'item_id', 'user_id', 'activation_date', 'title', 'description'], axis=1, inplace=True)
-    
+    df_train.drop(
+        ["image", "item_id", "user_id", "activation_date", "title", "description"],
+        axis=1,
+        inplace=True,
+    )
+
     # Count encoding
-    cat_features = df_train.select_dtypes(include='object').columns
+    cat_features = df_train.select_dtypes(include="object").columns
     for col in cat_features:
-        df_train[col] = df_train[col].fillna('')
+        df_train[col] = df_train[col].fillna("")
 
     for col in cat_features:
         count_map = df_train[col].value_counts().to_dict()
         df_train[col] = df_train[col].map(count_map)
 
-    num_features = df_train.select_dtypes(include='number').columns
+    num_features = df_train.select_dtypes(include="number").columns
     for col in num_features:
         df_train[col] = df_train[col].fillna(df_train[col].median())
 
-    X = df_train.drop(columns=['deal_probability'])
-    y = df_train['deal_probability']
+    X = df_train.drop(columns=["deal_probability"])
+    y = df_train["deal_probability"]
 
-    print('==== Data preprocessed successfully! ====')
+    print("==== Data preprocessed successfully! ====")
 
     return X, y
 

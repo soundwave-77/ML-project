@@ -13,12 +13,15 @@ clip_model, clip_preprocess = clip.load("ViT-B/32", device=device)
 
 # Load the DINO v2 model and preprocessing
 try:
-    dinov2_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14', pretrained=True)
+    dinov2_model = torch.hub.load(
+        "facebookresearch/dinov2", "dinov2_vitl14", pretrained=True
+    )
     dinov2_model.to(device)
     dinov2_model.eval()
 except Exception as e:
     print(f"Error loading DINO v2 model: {e}")
     dinov2_model = None
+
 
 # Define DINO v2 preprocessing (adjust based on the model's requirements)
 def dinov2_preprocess(image: Image.Image):
@@ -26,10 +29,10 @@ def dinov2_preprocess(image: Image.Image):
     transform = torch.nn.Sequential(
         torch.nn.Resize((480, 480)),
         torch.nn.ToTensor(),
-        torch.nn.Normalize(mean=[0.485, 0.456, 0.406],
-                           std=[0.229, 0.224, 0.225]),
+        torch.nn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     )
     return transform(image).unsqueeze(0).to(device)
+
 
 def get_dinov2_embeddings(image_path: str):
     """
