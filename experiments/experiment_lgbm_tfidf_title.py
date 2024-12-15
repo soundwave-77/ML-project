@@ -176,4 +176,4 @@ if __name__ == '__main__':
 
     title_emb = pd.read_parquet(title_emb_path)
 
-    main(df_train, title_emb, description_emb, model_name, task_name)
+    main(df_train, title_emb, model_name, task_name)
