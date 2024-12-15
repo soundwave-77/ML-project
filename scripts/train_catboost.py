@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import numpy as np
 from catboost import CatBoostRegressor, Pool
@@ -20,6 +21,7 @@ def train_model(model_name, task_name, X, y, cat_features):
             "categorical_features": cat_features,
         }
     )
+    logger = task.get_logger()
     task_type = "GPU" if is_gpu_available() else "CPU"
     print(f"Using {task_type} for training")
 
@@ -69,14 +71,16 @@ def train_model(model_name, task_name, X, y, cat_features):
     # Evaluate final model
     preds = model.predict(X)
     rmse_score = rmse(preds, y)
-    task.connect({"train_rmse": rmse_score})
+    logger.report_single_value(name="train_rmse", value=rmse_score)
 
     save_feature_importance(model, X, task, task_name, model_name)
 
     # Save final model checkpoint
-    final_checkpoint_path = "final_model.cbm"
+    final_checkpoint_path = f"outputs/models/{model_name}/{task_name}/final_model.cbm"
+    Path(final_checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
     model.save_model(final_checkpoint_path)
-    task.upload_artifact(name="final_model_checkpoint", artifact_object=final_checkpoint_path)
+    # uploading is slower than training((
+    # task.upload_artifact(name="final_model_checkpoint", artifact_object=final_checkpoint_path)
 
     return model, rmse_score
 
