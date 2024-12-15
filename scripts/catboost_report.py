@@ -5,7 +5,7 @@ import shap
 from pathlib import Path
 
 
-OUTPUTS_PATH = Path('outputs/model_report/')
+OUTPUTS_PATH = Path("outputs/model_report/")
 OUTPUTS_PATH.mkdir(parents=True, exist_ok=True)
 
 # Load your trained model
@@ -15,8 +15,12 @@ model = CatBoostRegressor()
 model.load_model("models/catboost.cbm")
 
 # Load test data (adjust file paths and column selection as needed)
-test_data = pd.read_csv("outputs/predictions.csv")  # Replace with your test dataset file path
-features = [col for col in test_data.columns if col != "deal_probability"]  # Adjust for your target column
+test_data = pd.read_csv(
+    "outputs/predictions.csv"
+)  # Replace with your test dataset file path
+features = [
+    col for col in test_data.columns if col != "deal_probability"
+]  # Adjust for your target column
 # test_pool = Pool(test_data[features])
 
 # 1. Compute Feature Importance (Model-based)
@@ -24,11 +28,17 @@ feature_importances = model.get_feature_importance(prettified=True)
 feature_importance_df = pd.DataFrame(feature_importances)
 
 # Save feature importance to CSV
-feature_importance_df.to_csv(OUTPUTS_PATH / "feature_importance_model_based.csv", index=False)
+feature_importance_df.to_csv(
+    OUTPUTS_PATH / "feature_importance_model_based.csv", index=False
+)
 
 # Plot Feature Importance (Model-based)
 plt.figure(figsize=(10, 6))
-plt.barh(feature_importance_df["Feature Id"], feature_importance_df["Importances"], color='skyblue')
+plt.barh(
+    feature_importance_df["Feature Id"],
+    feature_importance_df["Importances"],
+    color="skyblue",
+)
 plt.xlabel("Importance")
 plt.ylabel("Feature")
 plt.title("Feature Importance (Model-based)")
@@ -37,18 +47,23 @@ plt.tight_layout()
 plt.savefig(OUTPUTS_PATH / "feature_importance_model_based.png")
 
 # 2. Compute Loss-Function Change Importance
-loss_change_importances = model.get_feature_importance(type='LossFunctionChange')
-loss_importance_df = pd.DataFrame({
-    "Feature": features,
-    "LossFunctionChangeImportance": loss_change_importances
-})
+loss_change_importances = model.get_feature_importance(type="LossFunctionChange")
+loss_importance_df = pd.DataFrame(
+    {"Feature": features, "LossFunctionChangeImportance": loss_change_importances}
+)
 
 # Save loss-function change importance to CSV
-loss_importance_df.to_csv(OUTPUTS_PATH / "feature_importance_loss_change.csv", index=False)
+loss_importance_df.to_csv(
+    OUTPUTS_PATH / "feature_importance_loss_change.csv", index=False
+)
 
 # Plot Loss-Function Change Importance
 plt.figure(figsize=(10, 6))
-plt.barh(loss_importance_df["Feature"], loss_importance_df["LossFunctionChangeImportance"], color='salmon')
+plt.barh(
+    loss_importance_df["Feature"],
+    loss_importance_df["LossFunctionChangeImportance"],
+    color="salmon",
+)
 plt.xlabel("Importance")
 plt.ylabel("Feature")
 plt.title("Feature Importance (Loss Function Change)")
@@ -57,7 +72,9 @@ plt.tight_layout()
 plt.savefig(OUTPUTS_PATH / "feature_importance_loss_change.png")
 
 # 3. Compute SHAP Values
-shap_values = model.get_feature_importance(data=test_pool, type="ShapValues")[:, :-1]  # Exclude last column (base value)
+shap_values = model.get_feature_importance(data=test_pool, type="ShapValues")[
+    :, :-1
+]  # Exclude last column (base value)
 
 # # Create SHAP Summary Plot
 # shap.summary_plot(shap_values, test_data[features], show=False)
