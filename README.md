@@ -2,7 +2,8 @@
 
 ## 1. To start training the model
 ```bash
-python scripts/train_catboost.py
+export PYTHONPATH=.
+./scripts/train.sh
 ```
 
 ## 2. To create report with the model predictions

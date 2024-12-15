@@ -5,3 +5,4 @@
 models/*
 /catboost_info/
 /outputs/
+__pycache__/
