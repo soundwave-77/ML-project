@@ -60,7 +60,7 @@ def train_model(model_name, task_name, X, y, cat_features):
 
     # Cross-validation
     scores = []
-    skf = StratifiedKFold(n_splits=2, shuffle=True, random_state=42)
+    skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
     stratify_labels = (y.round(2) * 100).astype(int)
     FOLD_LIST = list(skf.split(stratify_labels, stratify_labels))
 
