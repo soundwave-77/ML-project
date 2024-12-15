@@ -85,5 +85,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    X, y, cat_features = load_and_preprocess_data(args.train_path)
+    X, y, cat_features = load_and_preprocess_data(args.train_path, add_text_features=True)
     train_model(args.model_name, args.task_name, X, y, cat_features)
