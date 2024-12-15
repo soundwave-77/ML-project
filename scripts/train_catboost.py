@@ -1,12 +1,12 @@
 import argparse
 
 import numpy as np
-from catboost import Pool, CatBoostRegressor
-from sklearn.model_selection import StratifiedKFold
+from catboost import CatBoostRegressor, Pool
 from clearml import Task
-from tqdm import tqdm
 from prepare_data import load_and_preprocess_data
-from utils import save_feature_importance, rmse
+from sklearn.model_selection import StratifiedKFold
+from tqdm import tqdm
+from utils import is_gpu_available, rmse, save_feature_importance
 
 
 def train_model(model_name, task_name, X, y, cat_features):
@@ -20,6 +20,8 @@ def train_model(model_name, task_name, X, y, cat_features):
             "categorical_features": cat_features,
         }
     )
+    task_type = "GPU" if is_gpu_available() else "CPU"
+    print(f"Using {task_type} for training")
 
     # Cross-validation
     scores = []
@@ -34,7 +36,12 @@ def train_model(model_name, task_name, X, y, cat_features):
         train_pool = Pool(X_train, y_train, cat_features=cat_features)
         eval_pool = Pool(X_val, y_val, cat_features=cat_features)
 
-        model = CatBoostRegressor(metric_period=50, early_stopping_rounds=5)
+        model = CatBoostRegressor(
+            metric_period=50,
+            early_stopping_rounds=5,
+            iterations=1000,
+            task_type=task_type,
+        )
         model.fit(train_pool, eval_set=eval_pool)
 
         preds = model.predict(X_val)
@@ -48,7 +55,10 @@ def train_model(model_name, task_name, X, y, cat_features):
 
     # Train model with best hyperparameters
     model = CatBoostRegressor(
-        metric_period=50, early_stopping_rounds=5, iterations=1000
+        metric_period=50,
+        early_stopping_rounds=5,
+        iterations=1000,
+        task_type=task_type,
     )
     model.fit(X, y, cat_features=cat_features)
 
@@ -61,7 +71,13 @@ def train_model(model_name, task_name, X, y, cat_features):
     rmse_score = rmse(preds, y)
     task.connect({"train_rmse": rmse_score})
 
-    save_feature_importance(model, X, task, task_name)
+    save_feature_importance(model, X, task, task_name, model_name)
+
+    # Save final model checkpoint
+    final_checkpoint_path = "final_model.cbm"
+    model.save_model(final_checkpoint_path)
+    task.upload_artifact(name="final_model_checkpoint", artifact_object=final_checkpoint_path)
+
     return model, rmse_score
 
 
@@ -85,5 +101,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    X, y, cat_features = load_and_preprocess_data(args.train_path, add_text_features=True)
+    X, y, cat_features = load_and_preprocess_data(
+        args.train_path, add_text_features=True
+    )
     train_model(args.model_name, args.task_name, X, y, cat_features)
