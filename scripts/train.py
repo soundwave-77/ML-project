@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 
 # local modules
 from prepare_data import load_and_preprocess_data, preprocess_data_ridge
-from utils import is_gpu_available, rmse, save_feature_importance
+from src.utils import is_gpu_available, rmse, save_feature_importance
 
 Task.set_offline(True)
 
@@ -99,7 +99,13 @@ def train_model(model_name, task_name, X, y, cat_features):
         r2 = r2_score(y_val, preds)
         scores.append({"rmse": score, "mae": mae, "r2": r2})
 
-    logger.report_single_value(name="mean_rmse_across_folds", value=np.mean(scores))
+    scores = {
+        "rmse": np.mean([score["rmse"] for score in scores]),
+        "mae": np.mean([score["mae"] for score in scores]),
+        "r2": np.mean([score["r2"] for score in scores]),
+    }
+    for key, value in scores.items():
+        logger.report_single_value(name=key, value=value)
 
     # Evaluate final model
     X_train_final, X_val_final, y_train_final, y_val_final = train_test_split(
@@ -149,7 +155,9 @@ def train_model(model_name, task_name, X, y, cat_features):
     elif model_name == "Ridge":
         final_checkpoint_path = ckpt_root / "final_model.joblib"
         joblib.dump(model, final_checkpoint_path)
-
+    elif model_name == "LightGBM":
+        final_checkpoint_path = ckpt_root / "final_model.lgb"
+        model.save_model(final_checkpoint_path)
     return model, rmse_score
 
 
@@ -179,6 +187,8 @@ if __name__ == "__main__":
         )
     elif args.model_name == "CatBoost":
         X, y, cat_features = load_and_preprocess_data(
-            args.train_path, add_text_features=True
+            args.train_path,
+            add_text_features=True,
+            # add_image_features=True,
         )
     train_model(args.model_name, args.task_name, X, y, cat_features)

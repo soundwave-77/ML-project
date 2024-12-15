@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from embedding_utils import load_text_embeddings_json
+from src.embeddings.loader import load_text_embeddings_json, load_embeddings
 
 pd.set_option("display.max_columns", None)
 
@@ -22,7 +22,7 @@ def fill_missing_values(df, cols):
     return df
 
 
-def load_and_preprocess_data(data_path: Path, add_text_features: bool = False):
+def load_and_preprocess_data(data_path: Path, add_text_features: bool = False, add_image_features: bool = False):
     # %%
     print("==== Preparing Data ====")
     # data_path = "../data/raw/train.csv"
@@ -56,6 +56,17 @@ def load_and_preprocess_data(data_path: Path, add_text_features: bool = False):
         text_embeddings = load_text_embeddings_json(embed_path)
         embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
         embeddings_df = embeddings_df.rename(columns=lambda x: f"description_embedding_{x+1}")
+        df = df.join(embeddings_df, how="left")
+
+    if add_image_features:
+        print("==== Adding image features ====")
+        # add image embeddings
+        embed_path = Path(
+            "~/Yandex.Disk/hse_ml_avito/vector_store/resnet/embeddings_train_merged.npz"
+        ).expanduser()
+        embeddings = load_embeddings(embed_path)
+        embeddings_df = df["item_id"].apply(lambda x: pd.Series(embeddings[x]))
+        embeddings_df = embeddings_df.rename(columns=lambda x: f"image_embedding_{x+1}")
         df = df.join(embeddings_df, how="left")
 
     # %%
