@@ -41,7 +41,7 @@ def preprocess_data(df_train):
     return X, y
 
 
-def train_model(model_name, task_name, X, y, cat_features):
+def train_model(model_name, task_name, X, y):
     # Initialize ClearML task
     task = Task.init(project_name='avito_sales_prediction', task_name=task_name)
 
