@@ -14,20 +14,20 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 # local modules
-from prepare_data import load_and_preprocess_data, preprocess_data_ridge
+from prepare_data import load_and_preprocess_data
 from src.utils import is_gpu_available, rmse, save_feature_importance
 
 # to disable clearml for debugging
 # Task.set_offline(True)
 
 
-def train_catboost(cat_features, X_train, y_train, X_val=None, y_val=None):
+def train_catboost(X_train, y_train, X_val=None, y_val=None):
     task_type = "GPU" if is_gpu_available() else "CPU"
     print(f"Using {task_type} for training")
 
-    train_pool = Pool(X_train, y_train, cat_features=cat_features)
+    train_pool = Pool(X_train, y_train)
     if X_val is not None and y_val is not None:
-        eval_pool = Pool(X_val, y_val, cat_features=cat_features)
+        eval_pool = Pool(X_val, y_val)
     else:
         eval_pool = None
     model = CatBoostRegressor(
@@ -40,25 +40,40 @@ def train_catboost(cat_features, X_train, y_train, X_val=None, y_val=None):
     return model
 
 
-def train_ridge(X_train, y_train, X_val, y_val):
+def train_ridge(X_train, y_train):
     model = make_pipeline(StandardScaler(), Ridge())
     model.fit(X_train, y_train)
     return model
 
 
-def train_lightgbm(X_train, y_train, X_val, y_val, **params):
+def train_lightgbm(X_train, y_train, X_val=None, y_val=None):
+    params = {
+        "objective": "regression",
+        "metric": "rmse",
+        "n_estimators": 1000,
+        "boosting_type": "gbdt",
+        "verbose": -1,
+    }
+
+    if X_val is not None and y_val is not None:
+        eval_set = [(X_val, y_val)]
+        callbacks = [early_stopping(stopping_rounds=5, verbose=True), log_evaluation(50)]
+    else:
+        eval_set = None
+        callbacks = None
+
     model = LGBMRegressor(**params)
     model.fit(
         X_train,
         y_train,
-        eval_set=[(X_val, y_val)],
+        eval_set=eval_set,
         eval_metric="rmse",
-        callbacks=[early_stopping(stopping_rounds=5, verbose=True), log_evaluation(50)],
+        callbacks=callbacks
     )
     return model
 
 
-def train_model(model_name, task_name, X, y, cat_features=None):
+def train_model(model_name, task_name, X, y):
     # Initialize ClearML task
     task = Task.init(project_name="avito_sales_prediction", task_name=task_name)
 
@@ -74,7 +89,7 @@ def train_model(model_name, task_name, X, y, cat_features=None):
 
     # Cross-validation
     scores = []
-    skf = KFold(n_splits=2, shuffle=True, random_state=42)
+    skf = KFold(n_splits=3, shuffle=True, random_state=42)
     FOLD_LIST = list(skf.split(X, y))
 
     for train_idx, val_idx in tqdm(FOLD_LIST):
@@ -82,17 +97,10 @@ def train_model(model_name, task_name, X, y, cat_features=None):
         X_val, y_val = X.loc[val_idx], y.loc[val_idx]
 
         if model_name == "CatBoost":
-            model = train_catboost(cat_features, X_train, y_train, X_val, y_val)
+            model = train_catboost(X_train, y_train, X_val, y_val)
         elif model_name == "Ridge":
-            model = train_ridge(X_train, y_train, X_val, y_val)
+            model = train_ridge(X_train, y_train)
         elif model_name == "LightGBM":
-            params = {
-                "objective": "regression",
-                "metric": "rmse",
-                "n_estimators": 1000,
-                "boosting_type": "gbdt",
-                "verbose": -1,
-            }
             model = train_lightgbm(X_train, y_train, X_val, y_val)
 
         preds = model.predict(X_val)
@@ -109,31 +117,18 @@ def train_model(model_name, task_name, X, y, cat_features=None):
     for key, value in scores.items():
         logger.report_single_value(name=key, value=value)
 
-    # Evaluate final model
-    X_train_final, X_val_final, y_train_final, y_val_final = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
     # Train model with best hyperparameters
     if model_name == "CatBoost":
-        model = train_catboost(
-            cat_features, X_train_final, y_train_final, X_val_final, y_val_final
-        )
+        model = train_catboost(X, y)
     elif model_name == "Ridge":
-        model = train_ridge(X_train_final, y_train_final, X_val_final, y_val_final)
-
-    preds = model.predict(X_val_final)
-    rmse_score = rmse(y_val_final, preds)
-    mae = mean_absolute_error(y_val_final, preds)
-    r2 = r2_score(y_val_final, preds)
-
-    logger.report_single_value(name="RMSE", value=rmse_score)
-    logger.report_single_value(name="MAE", value=mae)
-    logger.report_single_value(name="R2 Score", value=r2)
+        model = train_ridge(X, y)
+    elif model_name == "LightGBM":
+        model = train_lightgbm(X, y)
 
     # Log hyperparameters to ClearML
     if model_name == "CatBoost":
         params = model.get_all_params()
-    elif model_name == "Ridge":
+    elif model_name in ["Ridge", "LightGBM"]:
         params = model.get_params()
     task.connect(params)
 
@@ -179,15 +174,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.model_name in ["Ridge", "LightGBM"]:
-        data = preprocess_data_ridge(
-            args.train_path
-        )
-    elif args.model_name == "CatBoost":
-        data = load_and_preprocess_data(
-            args.train_path,
-            add_text_features=True,
-            # add_image_features=True,
-        )
-    X, y, cat_features = data["X"], data["y"], data["cat_features"]
-    train_model(args.model_name, args.task_name, X, y, cat_features)
+    data = load_and_preprocess_data(
+        args.train_path,
+        add_text_features=False,
+        # add_image_features=True,
+    )
+    X, y = data["X"], data["y"]
+    train_model(args.model_name, args.task_name, X, y)

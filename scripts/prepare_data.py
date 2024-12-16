@@ -8,14 +8,6 @@ from src.embeddings.loader import load_text_embeddings_json, load_embeddings
 pd.set_option("display.max_columns", None)
 
 
-def prepare_price_col(df):
-    """
-    Function to fill missing values in price column with mean price
-    """
-    df["price"] = df["price"].fillna(df["price"].mean())
-    return df
-
-
 def fill_missing_values(df, cols):
     for col in cols:
         df[col] = df[col].fillna("")
@@ -29,13 +21,21 @@ def load_and_preprocess_data(
     print("==== Preparing Data ====")
     # data_path = "../data/raw/train.csv"
     df = pd.read_csv(data_path)
-    # prepare price column
-    df = prepare_price_col(df)
-    # fill missing values
-    col_list = ["param_1", "param_2", "param_3", "image_top_1", "title", "description"]
-    df = fill_missing_values(df, col_list)
-    # convert image_top_1 to string
-    df["image_top_1"] = df["image_top_1"].astype("str")
+    
+    # Fill missing values in categorical features
+    cat_features = df.select_dtypes(include="object").columns
+    df = fill_missing_values(df, cat_features)
+
+    # Count encoding
+    for col in cat_features:
+        count_map = df[col].value_counts().to_dict()
+        df[col] = df[col].map(count_map)
+
+    # Fill missing values in numerical features
+    num_features = df.select_dtypes(include="number").columns
+    for col in num_features:
+        df[col] = df[col].fillna(df[col].median())
+
 
     # %%
     if add_text_features:
@@ -91,53 +91,10 @@ def load_and_preprocess_data(
 
     print("==== Data preprocessed successfully! ====")
 
-    cat_features = [
-        "region",
-        "city",
-        "parent_category_name",
-        "category_name",
-        "param_1",
-        "param_2",
-        "param_3",
-        "user_type",
-        "image_top_1",
-    ]
-    return {"X": X, "y": y, "cat_features": cat_features}
-
-
-def preprocess_data_ridge(data_path: Path):
-    print("==== Preparing Data ====")
-    df_train = pd.read_csv(data_path)
-
-    df_train.drop(
-        ["image", "item_id", "user_id", "activation_date", "title", "description"],
-        axis=1,
-        inplace=True,
-    )
-
-    # Count encoding
-    cat_features = df_train.select_dtypes(include="object").columns
-    for col in cat_features:
-        df_train[col] = df_train[col].fillna("")
-
-    for col in cat_features:
-        count_map = df_train[col].value_counts().to_dict()
-        df_train[col] = df_train[col].map(count_map)
-
-    num_features = df_train.select_dtypes(include="number").columns
-    for col in num_features:
-        df_train[col] = df_train[col].fillna(df_train[col].median())
-
-    X = df_train.drop(columns=["deal_probability"])
-    y = df_train["deal_probability"]
-
-    print("==== Data preprocessed successfully! ====")
-
-    return {"X": X, "y": y, "cat_features": cat_features}
+    return {"X": X, "y": y}
 
 
 if __name__ == "__main__":
     data = load_and_preprocess_data("data/raw/train.csv")
     print(data["X"].head(3))
     print(data["y"].head(3))
-    print(data["cat_features"])
