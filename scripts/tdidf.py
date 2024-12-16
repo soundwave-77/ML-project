@@ -12,26 +12,29 @@ class TfidfSVDModel:
         self.svd = TruncatedSVD(**svd_params) if svd_params else None
 
     def fit(self, texts):
-        tfidf_matrix = self.tfidf.fit_transform(texts)
-        if self.svd:
-            self.svd.fit(tfidf_matrix)
+        self.tfidf.fit(texts)
         return self
 
     def transform(self, texts):
         tfidf_matrix = self.tfidf.transform(texts)
         if self.svd:
-            return self.svd.transform(tfidf_matrix)
+            X = self.svd.fit_transform(tfidf_matrix)
+            print(f"Explained variance ratio: {self.svd.explained_variance_ratio_.sum()}")
+            return X
         return tfidf_matrix
 
     def fit_transform(self, texts):
         tfidf_matrix = self.tfidf.fit_transform(texts)
         if self.svd:
-            return self.svd.fit_transform(tfidf_matrix)
+            X = self.svd.fit_transform(tfidf_matrix)
+            print(f"Explained variance ratio: {self.svd.explained_variance_ratio_.sum()}")
+            return X
         return tfidf_matrix
 
 
 def process_and_save_tfidf(
-        df,
+        train_df,
+        test_df,
         text_columns,
         max_features,
         ngram_range=(1, 2),
@@ -40,9 +43,10 @@ def process_and_save_tfidf(
 ):
     """
     Processes text data using a TfidfVectorizer and optional TruncatedSVD,
-    then saves the combined model to a .pkl file and embeddings to Parquet.
+    then saves the combined model to a .pkl file and embeddings for both train and test data to Parquet.
     """
-    df["combined_text"] = df[text_columns].fillna("").agg(" ".join, axis=1)
+    train_df["combined_text"] = train_df[text_columns].fillna("").agg(" ".join, axis=1)
+    test_df["combined_text"] = test_df[text_columns].fillna("").agg(" ".join, axis=1)
 
     tfidf_params = {
         "sublinear_tf": True,
@@ -57,18 +61,27 @@ def process_and_save_tfidf(
 
     model = TfidfSVDModel(tfidf_params, svd_params)
 
-    X_texts = model.fit_transform(df["combined_text"])
+    X_train = model.fit_transform(train_df["combined_text"])
+    print(f"Train result shape: {X_train.shape}")
+    X_test = model.transform(test_df["combined_text"])
+    print(f"Test result shape: {X_test.shape}")
 
     os.makedirs(output_dir, exist_ok=True)
+    train_output_dir = os.path.join(output_dir, "train")
+    test_output_dir = os.path.join(output_dir, "test")
+    os.makedirs(train_output_dir, exist_ok=True)
+    os.makedirs(test_output_dir, exist_ok=True)
+    columns_str = "_".join(text_columns)
 
-    model_path = os.path.join(output_dir, f"tfidf_svd_model.pkl")
+    model_path = os.path.join(output_dir, f"{columns_str}_tfidf_svd_model.pkl")
     joblib.dump(model, model_path)
 
-    columns_str = "_".join(text_columns)
-    embeddings_path = os.path.join(output_dir, f"{columns_str}_embeddings.parquet")
+    train_embeddings_path = os.path.join(train_output_dir, f"{columns_str}_embeddings.parquet")
+    test_embeddings_path = os.path.join(test_output_dir, f"{columns_str}_embeddings.parquet")
 
-    embeddings_df = pd.DataFrame(X_texts, index=df.index)
-    embeddings_df.to_parquet(embeddings_path, index=True)
+    pd.DataFrame(X_train, index=train_df.index).to_parquet(train_embeddings_path, index=True)
+    pd.DataFrame(X_test, index=test_df.index).to_parquet(test_embeddings_path, index=True)
 
     print(f"Combined TF-IDF + SVD model saved to: {model_path}")
-    print(f"Embeddings saved to: {embeddings_path}")
+    print(f"Train embeddings saved to: {train_embeddings_path}")
+    print(f"Test embeddings saved to: {test_embeddings_path}")
