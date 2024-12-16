@@ -17,17 +17,21 @@ from sklearn.preprocessing import StandardScaler
 from prepare_data import load_and_preprocess_data
 from src.utils import is_gpu_available, rmse, save_feature_importance
 
-# to disable clearml for debugging
-# Task.set_offline(True)
+
+import os
+
+if os.getenv('ENABLE_CLEARML', '0') == '0':
+    # to disable clearml for debugging
+    Task.set_offline(True)
 
 
-def train_catboost(X_train, y_train, cat_features, X_val=None, y_val=None):
+def train_catboost(X_train, y_train, X_val=None, y_val=None, cat_features=None, embed_features=None):
     task_type = "GPU" if is_gpu_available() else "CPU"
     print(f"Using {task_type} for training")
 
-    train_pool = Pool(X_train, y_train, cat_features=cat_features)
+    train_pool = Pool(X_train, y_train, cat_features=cat_features, embedding_features=embed_features)
     if X_val is not None and y_val is not None:
-        eval_pool = Pool(X_val, y_val, cat_features=cat_features)
+        eval_pool = Pool(X_val, y_val, cat_features=cat_features, embedding_features=embed_features)
     else:
         eval_pool = None
     model = CatBoostRegressor(
@@ -73,7 +77,7 @@ def train_lightgbm(X_train, y_train, X_val=None, y_val=None):
     return model
 
 
-def train_model(model_name, task_name, X, y):
+def train_model(model_name, task_name, X, y, cat_features=None, embed_features=None):
     # Initialize ClearML task
     task = Task.init(project_name="avito_sales_prediction", task_name=task_name)
 
@@ -100,7 +104,7 @@ def train_model(model_name, task_name, X, y):
         X_val, y_val = X.loc[val_idx], y.loc[val_idx]
 
         if model_name == "CatBoost":
-            model = train_catboost(X_train, y_train, cat_features, X_val, y_val)
+            model = train_catboost(X_train, y_train, X_val, y_val, cat_features, embed_features)
         elif model_name == "Ridge":
             model = train_ridge(X_train, y_train)
         elif model_name == "LightGBM":
@@ -122,7 +126,9 @@ def train_model(model_name, task_name, X, y):
 
     # Train model with best hyperparameters
     if model_name == "CatBoost":
-        model = train_catboost(X, y, cat_features)
+        model = train_catboost(
+            X_train_final, y_train_final, X_val_final, y_val_final, cat_features, embed_features
+        )
     elif model_name == "Ridge":
         model = train_ridge(X, y)
     elif model_name == "LightGBM":
@@ -188,5 +194,17 @@ if __name__ == "__main__":
             add_image_features=False,
             use_reduced_rubert_embeddings=False,
         )
-    X, y, cat_features = data["X"], data["y"], data["cat_features"]
-    train_model(args.model_name, args.task_name, X, y, cat_features)
+    X, y, cat_features, embed_features = (
+        data["X"],
+        data["y"],
+        data["cat_features"],
+        data["embed_features"],
+    )
+    print('-------')
+    print(X.head(2))
+    print(y.head(2))
+    print(f'cat_features: {cat_features}')
+    print(f'embed_features: {embed_features}')
+    print('-------')
+
+    train_model(args.model_name, args.task_name, X, y, cat_features, embed_features)
