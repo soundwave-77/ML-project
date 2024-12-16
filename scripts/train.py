@@ -32,8 +32,8 @@ def train_catboost(X_train, y_train, X_val=None, y_val=None):
         eval_pool = None
     model = CatBoostRegressor(
         metric_period=50,
-        early_stopping_rounds=5,
-        iterations=1000,
+        early_stopping_rounds=10,
+        iterations=2000,
         task_type=task_type,
     )
     model.fit(train_pool, eval_set=eval_pool)
@@ -50,14 +50,14 @@ def train_lightgbm(X_train, y_train, X_val=None, y_val=None):
     params = {
         "objective": "regression",
         "metric": "rmse",
-        "n_estimators": 1000,
+        "n_estimators": 2000,
         "boosting_type": "gbdt",
         "verbose": -1,
     }
 
     if X_val is not None and y_val is not None:
         eval_set = [(X_val, y_val)]
-        callbacks = [early_stopping(stopping_rounds=5, verbose=True), log_evaluation(50)]
+        callbacks = [early_stopping(stopping_rounds=10, verbose=True), log_evaluation(50)]
     else:
         eval_set = None
         callbacks = None
