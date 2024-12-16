@@ -14,8 +14,30 @@ def fill_missing_values(df, cols):
     return df
 
 
+def preprocess_data_for_model(df, model_name):
+    cat_features = df.select_dtypes(include="object").columns
+    df = fill_missing_values(df, cat_features)
+
+    # Fill missing values in numerical features
+    num_features = df.select_dtypes(include="number").columns
+    for col in num_features:
+        df[col] = df[col].fillna(df[col].median())
+
+    if model_name in ["Ridge", "LightGBM"]:
+        # Count encoding
+        for col in cat_features:
+            count_map = df[col].value_counts().to_dict()
+            df[col] = df[col].map(count_map)
+    elif model_name == "CatBoost":
+        df["image_top_1"] = df["image_top_1"].astype("str")
+    return df
+
+
 def load_and_preprocess_data(
-    data_path: Path, add_text_features: bool = False, add_image_features: bool = False
+    model_name: str,
+    data_path: Path,
+    add_text_features: bool = False,
+    add_image_features: bool = False
 ):
     # %%
     print("==== Preparing Data ====")
@@ -26,17 +48,7 @@ def load_and_preprocess_data(
     cat_features = df.select_dtypes(include="object").columns
     df = fill_missing_values(df, cat_features)
 
-    # Count encoding
-    for col in cat_features:
-        count_map = df[col].value_counts().to_dict()
-        df[col] = df[col].map(count_map)
-
-    # Fill missing values in numerical features
-    num_features = df.select_dtypes(include="number").columns
-    for col in num_features:
-        df[col] = df[col].fillna(df[col].median())
-
-
+    df = preprocess_data_for_model(df, model_name)
     # %%
     if add_text_features:
         print("==== Adding text features ====")
@@ -95,6 +107,6 @@ def load_and_preprocess_data(
 
 
 if __name__ == "__main__":
-    data = load_and_preprocess_data("data/raw/train.csv")
+    data = load_and_preprocess_data("CatBoost", "data/raw/train.csv")
     print(data["X"].head(3))
     print(data["y"].head(3))

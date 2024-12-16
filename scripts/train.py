@@ -9,7 +9,7 @@ from clearml import Task
 from lightgbm import LGBMRegressor, early_stopping, log_evaluation
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import KFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -21,20 +21,20 @@ from src.utils import is_gpu_available, rmse, save_feature_importance
 # Task.set_offline(True)
 
 
-def train_catboost(X_train, y_train, X_val=None, y_val=None):
+def train_catboost(X_train, y_train, cat_features, X_val=None, y_val=None):
     task_type = "GPU" if is_gpu_available() else "CPU"
     print(f"Using {task_type} for training")
 
-    train_pool = Pool(X_train, y_train)
+    train_pool = Pool(X_train, y_train, cat_features=cat_features)
     if X_val is not None and y_val is not None:
-        eval_pool = Pool(X_val, y_val)
+        eval_pool = Pool(X_val, y_val, cat_features=cat_features)
     else:
         eval_pool = None
     model = CatBoostRegressor(
         metric_period=50,
         early_stopping_rounds=10,
-        iterations=2000,
-        task_type=task_type,
+        iterations=1000,
+        task_type=task_type
     )
     model.fit(train_pool, eval_set=eval_pool)
     return model
@@ -50,7 +50,7 @@ def train_lightgbm(X_train, y_train, X_val=None, y_val=None):
     params = {
         "objective": "regression",
         "metric": "rmse",
-        "n_estimators": 2000,
+        "n_estimators": 1000,
         "boosting_type": "gbdt",
         "verbose": -1,
     }
@@ -77,12 +77,15 @@ def train_model(model_name, task_name, X, y):
     # Initialize ClearML task
     task = Task.init(project_name="avito_sales_prediction", task_name=task_name)
 
-    task.connect(
+    num_features = list(X.select_dtypes(include="number").columns)
+    cat_features = list(X.select_dtypes(include="object").columns)
+
+    task.connect(   
         {
             "model_name": model_name,
             "dataset_size": X.shape,
-            "numerical_features": X.select_dtypes(include="number").columns.to_list(),
-            "categorical_features": X.select_dtypes(include="object").columns.to_list(),
+            "numerical_features": num_features,
+            "categorical_features": cat_features
         }
     )
     logger = task.get_logger()
@@ -97,7 +100,7 @@ def train_model(model_name, task_name, X, y):
         X_val, y_val = X.loc[val_idx], y.loc[val_idx]
 
         if model_name == "CatBoost":
-            model = train_catboost(X_train, y_train, X_val, y_val)
+            model = train_catboost(X_train, y_train, cat_features, X_val, y_val)
         elif model_name == "Ridge":
             model = train_ridge(X_train, y_train)
         elif model_name == "LightGBM":
@@ -119,7 +122,7 @@ def train_model(model_name, task_name, X, y):
 
     # Train model with best hyperparameters
     if model_name == "CatBoost":
-        model = train_catboost(X, y)
+        model = train_catboost(X, y, cat_features)
     elif model_name == "Ridge":
         model = train_ridge(X, y)
     elif model_name == "LightGBM":
@@ -175,9 +178,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data = load_and_preprocess_data(
+        args.model_name,
         args.train_path,
         add_text_features=False,
-        # add_image_features=True,
+        add_image_features=False,
     )
     X, y = data["X"], data["y"]
     train_model(args.model_name, args.task_name, X, y)
