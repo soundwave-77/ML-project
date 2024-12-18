@@ -4,9 +4,9 @@ export ENABLE_CLEARML=1
 
 python scripts/train.py \
     --train_path data/raw/train.csv \
-    --task_name catboost_rubert_features_title_longer_sep_embed_no_stratified_kfold \
+    --task_name catboost_rubert_features_title_longer_sep_embed_stratified_kfold3 \
     --model_name CatBoost \
-    --use_stratified_kfold False \
+    --use_stratified_kfold True \
     --embed_add_as_separate_columns True
 
 # catboost_rubert_features_title_longer_dim2 - storing embeddings in a single column
