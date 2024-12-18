@@ -34,50 +34,23 @@ def preprocess_data_for_model(df, model_name):
     elif model_name == "CatBoost":
         df["image_top_1"] = df["image_top_1"].astype("str")
     return df
+
+
 def df_with_nested_embeddings(embed_path: Path, embed_name: str):
     """Add embeddings to dataframe
 
         embeddings as list in column
     """
-    # # first way to store embeddings: as separate columns
-    # # text_embeddings_df = load_text_embeddings_h5(embed_path, "title")
-    # # df = df.join(text_embeddings_df, how="left")
-
-    # # add title embeddings
-    # # embed_path = Path(
-    # #     "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_train.h5"
-    # # ).expanduser()
-
-    # # embed_path = Path(
-    # #     "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.json"
-    # # ).expanduser()
-    # # embed_name = 'title_rubert_embeddings_short_json'
-    # df = df.join(embeddings_df, on='item_id')
-
     embeddings = load_json_embedding_as_dict(embed_path, embed_name)
     embeddings_df = embedding_dict_to_df(embeddings)
     return embeddings_df
 
 
 def df_with_text_features_as_separate_columns(df, embed_path: Path, embed_name: str):
-    # add title embeddings
     text_embeddings = load_text_embeddings_json(embed_path)
     embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
     embeddings_df = embeddings_df.rename(columns=lambda x: f"title_embedding_{x+1}")
     return embeddings_df
-    # df = df.join(embeddings_df, how="left")
-
-    # # add description embeddings
-    # embed_path = Path(
-    #     "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/description_embeddings_reduced_train.json"
-    # ).expanduser()
-    # text_embeddings = load_text_embeddings_json(embed_path)
-    # embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
-    # embeddings_df = embeddings_df.rename(
-    #     columns=lambda x: f"description_embedding_{x+1}"
-    # )
-    # df = df.join(embeddings_df, how="left")
-    # return df
 
 
 def convert_to_classification_target(y, num_bins = 5):
@@ -102,6 +75,7 @@ def load_and_preprocess_data(
     add_text_features: bool = False,
     add_image_features: bool = False,
     use_reduced_rubert_embeddings: bool = False,
+    embed_add_as_separate_columns: bool = False,
 ):
     # %%
     # data_path = "../data/raw/train.csv"
@@ -124,30 +98,38 @@ def load_and_preprocess_data(
     embed_features = []
     if add_text_features:
         print("==== Adding text features ====")
-        # df = df_with_text_features_as_separate_columns(df)
+
         embed_path = Path(
             "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_reduced_train.json"
         ).expanduser()
         embed_name = "title_rubert_embeddings_short_json"
-        embed_features.append(embed_name)
-        embed_df = df_with_nested_embeddings(embed_path, embed_name)
-        # embed_features.append([c for c in embed_df.columns])
 
-        # embed_df = df_with_text_features_as_separate_columns(df, embed_path, embed_name)
-        df = df.join(embed_df, on='item_id')
+        # embed_path = Path(
+        #     "~/Yandex.Disk/hse_ml_avito/vector_store/rubert_tiny_turbo/title_embeddings_train.h5"
+        # ).expanduser()
+        # embed_name = "title_rubert_embeddings_short_h5"
 
-    if add_image_features:
-        print("==== Adding image features ====")
-        # add image embeddings
-        embed_path = Path(
-            "~/Yandex.Disk/hse_ml_avito/vector_store/resnet/embeddings_train_merged.npz"
-        ).expanduser()
-        embeddings = load_embeddings(embed_path)
-        embeddings_df = df["item_id"].apply(lambda x: pd.Series(embeddings[x]))
-        embeddings_df = embeddings_df.rename(columns=lambda x: f"image_embedding_{x+1}")
-        df = df.join(embeddings_df, how="left")
+        if embed_add_as_separate_columns:  # each embedding feature is a separate column
+            embed_df = df_with_text_features_as_separate_columns(df, embed_path, embed_name)
+            df = df.join(embed_df, how="left")
+            # embed_features.extend([c for c in embed_df.columns])
+        else:  # all embeddings are in a single column
+            embed_features.append(embed_name)
+            embed_df = df_with_nested_embeddings(embed_path, embed_name)
+            df = df.join(embed_df, on='item_id')
 
-        embed_features.append([c for c in embeddings_df.columns])
+    # if add_image_features:
+    #     print("==== Adding image features ====")
+    #     # add image embeddings
+    #     embed_path = Path(
+    #         "~/Yandex.Disk/hse_ml_avito/vector_store/resnet/embeddings_train_merged.npz"
+    #     ).expanduser()
+    #     embeddings = load_embeddings(embed_path)
+    #     embeddings_df = df["item_id"].apply(lambda x: pd.Series(embeddings[x]))
+    #     embeddings_df = embeddings_df.rename(columns=lambda x: f"image_embedding_{x+1}")
+    #     df = df.join(embeddings_df, how="left")
+
+    #     embed_features.append([c for c in embeddings_df.columns])
     # %%
     # drop unused(for now) columns
     # 'params', 'price_log', 'deal_prob_cat',
