@@ -9,7 +9,6 @@ python scripts/train.py \
     --use_stratified_kfold True \
     --embed_add_as_separate_columns True
 
-# catboost_rubert_features_title_longer_dim2 - storing embeddings in a single column
 
 # ridge
 # python scripts/train.py \
