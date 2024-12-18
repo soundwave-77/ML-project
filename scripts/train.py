@@ -9,7 +9,7 @@ from clearml import Task
 from lightgbm import LGBMRegressor, early_stopping, log_evaluation
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split, StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -77,7 +77,7 @@ def train_lightgbm(X_train, y_train, X_val=None, y_val=None):
     return model
 
 
-def train_model(model_name, task_name, X, y, cat_features=None, embed_features=None):
+def train_model(model_name, task_name, X, y, cat_features=None, embed_features=None, use_stratified_kfold=False):
     # Initialize ClearML task
     task = Task.init(project_name="avito_sales_prediction", task_name=task_name)
 
@@ -96,8 +96,16 @@ def train_model(model_name, task_name, X, y, cat_features=None, embed_features=N
 
     # Cross-validation
     scores = []
-    skf = KFold(n_splits=3, shuffle=True, random_state=42)
-    FOLD_LIST = list(skf.split(X, y))
+
+    if use_stratified_kfold:
+        splitter = StratifiedKFold(n_splits=3, shuffle=True,
+                                random_state=42)
+
+        _y = (y.round(2)*100).astype(int)
+        FOLD_LIST = list(splitter.split(_y, _y))
+    else:
+        splitter = KFold(n_splits=3, shuffle=True, random_state=42)
+        FOLD_LIST = list(splitter.split(X, y))
 
     for train_idx, val_idx in tqdm(FOLD_LIST):
         X_train, y_train = X.loc[train_idx], y.loc[train_idx]
@@ -181,6 +189,13 @@ if __name__ == "__main__":
         "--task_name", type=str, required=True, help="Name of the ClearML task"
     )
 
+    parser.add_argument(
+        "--use_stratified_kfold",
+        type=bool,
+        default=True,
+        help="Use stratified k-fold cross-validation",
+    )
+
     args = parser.parse_args()
 
     if args.model_name in ["Ridge", "LightGBM"]:
@@ -207,4 +222,4 @@ if __name__ == "__main__":
     print(f'embed_features: {embed_features}')
     print('-------')
 
-    train_model(args.model_name, args.task_name, X, y, cat_features, embed_features)
+    train_model(args.model_name, args.task_name, X, y, cat_features, embed_features, args.use_stratified_kfold)
