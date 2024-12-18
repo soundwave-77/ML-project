@@ -98,33 +98,51 @@ def train_model(model_name, task_name, X, y, cat_features=None, embed_features=N
 
     # Cross-validation
     scores = []
-
+    folds_num = 3
     if use_stratified_kfold:
-        splitter = StratifiedKFold(n_splits=3, shuffle=True,
+        splitter = StratifiedKFold(n_splits=folds_num, shuffle=True,
                                 random_state=42)
 
         _y = (y.round(2)*100).astype(int)
         FOLD_LIST = list(splitter.split(_y, _y))
     else:
-        splitter = KFold(n_splits=3, shuffle=True, random_state=42)
+        splitter = KFold(n_splits=folds_num, shuffle=True, random_state=42)
         FOLD_LIST = list(splitter.split(X, y))
 
-    for train_idx, val_idx in tqdm(FOLD_LIST):
+    for fold_id, (train_idx, val_idx) in enumerate(FOLD_LIST):
         X_train, y_train = X.loc[train_idx], y.loc[train_idx]
         X_val, y_val = X.loc[val_idx], y.loc[val_idx]
 
         if model_name == "CatBoost":
-            model = train_catboost(X, y, cat_features=cat_features, embed_features=embed_features)
+            model = train_catboost(X_train, y_train, X_val, y_val, cat_features=cat_features, embed_features=embed_features)
         elif model_name == "Ridge":
-            model = train_ridge(X, y)
+            model = train_ridge(X_train, y_train)
         elif model_name == "LightGBM":
-            model = train_lightgbm(X, y)
+            model = train_lightgbm(X_train, y_train, X_val, y_val)
+
+
+        # Ensure y_val is a Pandas Series
+        if isinstance(y_val, pd.DataFrame):
+            y_val = y_val.squeeze()
+        elif isinstance(y_val, np.ndarray) and y_val.ndim > 1:
+            y_val = y_val.ravel()
 
         preds = model.predict(X_val)
         score = rmse(y_val, preds)
         mae = mean_absolute_error(y_val, preds)
         r2 = r2_score(y_val, preds)
         scores.append({"rmse": score, "mae": mae, "r2": r2})
+
+        # Log feature importances to ClearML
+        if model_name == "CatBoost":
+            feature_importances = model.get_feature_importance()
+        elif model_name == "Ridge":
+            feature_importances = np.abs(model.named_steps["ridge"].coef_)
+        elif model_name == "LightGBM":
+            feature_importances = model.feature_importances_
+
+        save_feature_importance(feature_importances, X, task, task_name, model_name, f"feature_importance_{fold_id}.csv")
+
 
     scores = {
         "cv_rmse": np.mean([score["rmse"] for score in scores]),
@@ -134,15 +152,6 @@ def train_model(model_name, task_name, X, y, cat_features=None, embed_features=N
     for key, value in scores.items():
         logger.report_single_value(name=key, value=value)
 
-    # Train model with best hyperparameters
-    if model_name == "CatBoost":
-        model = train_catboost(
-            X_train_final, y_train_final, X_val_final, y_val_final, cat_features, embed_features
-        )
-    elif model_name == "Ridge":
-        model = train_ridge(X, y)
-    elif model_name == "LightGBM":
-        model = train_lightgbm(X, y)
 
     # Log hyperparameters to ClearML
     if model_name == "CatBoost":
@@ -151,26 +160,17 @@ def train_model(model_name, task_name, X, y, cat_features=None, embed_features=N
         params = model.get_params()
     task.connect(params)
 
-    # Log feature importances to ClearML
-    if model_name == "CatBoost":
-        feature_importances = model.get_feature_importance()
-    elif model_name == "Ridge":
-        feature_importances = np.abs(model.named_steps["ridge"].coef_)
-    elif model_name == "LightGBM":
-        feature_importances = model.feature_importances_
 
-    save_feature_importance(feature_importances, X, task, task_name, model_name)
+    # # Save final model checkpoint
+    # ckpt_root = Path(f"outputs/models/{model_name}/{task_name}/")
+    # ckpt_root.mkdir(parents=True, exist_ok=True)
 
-    # Save final model checkpoint
-    ckpt_root = Path(f"outputs/models/{model_name}/{task_name}/")
-    ckpt_root.mkdir(parents=True, exist_ok=True)
-
-    if model_name == "CatBoost":
-        final_checkpoint_path = ckpt_root / "final_model.cbm"
-        model.save_model(final_checkpoint_path)
-    elif model_name in ["Ridge", "LightGBM"]:
-        final_checkpoint_path = ckpt_root / "final_model.joblib"
-        joblib.dump(model, final_checkpoint_path)
+    # if model_name == "CatBoost":
+    #     final_checkpoint_path = ckpt_root / "final_model.cbm"
+    #     model.save_model(final_checkpoint_path)
+    # elif model_name in ["Ridge", "LightGBM"]:
+    #     final_checkpoint_path = ckpt_root / "final_model.joblib"
+    #     joblib.dump(model, final_checkpoint_path)
 
 
 if __name__ == "__main__":
