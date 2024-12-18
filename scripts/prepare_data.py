@@ -43,7 +43,7 @@ def load_and_preprocess_data(
     print("==== Preparing Data ====")
     # data_path = "../data/raw/train.csv"
     df = pd.read_csv(data_path)
-    
+
     # Fill missing values in categorical features
     cat_features = df.select_dtypes(include="object").columns
     df = fill_missing_values(df, cat_features)
