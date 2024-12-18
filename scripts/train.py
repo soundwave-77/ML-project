@@ -3,6 +3,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from catboost import CatBoostRegressor, Pool
 from clearml import Task
@@ -12,9 +13,10 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import KFold, train_test_split, StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+import pickle
 
 # local modules
-from prepare_data import load_and_preprocess_data
+from prepare_data import load_and_preprocess_data, fill_missing_values
 from src.utils import is_gpu_available, rmse, save_feature_importance
 
 
@@ -112,11 +114,11 @@ def train_model(model_name, task_name, X, y, cat_features=None, embed_features=N
         X_val, y_val = X.loc[val_idx], y.loc[val_idx]
 
         if model_name == "CatBoost":
-            model = train_catboost(X_train, y_train, X_val, y_val, cat_features, embed_features)
+            model = train_catboost(X, y, cat_features=cat_features, embed_features=embed_features)
         elif model_name == "Ridge":
-            model = train_ridge(X_train, y_train)
+            model = train_ridge(X, y)
         elif model_name == "LightGBM":
-            model = train_lightgbm(X_train, y_train, X_val, y_val)
+            model = train_lightgbm(X, y)
 
         preds = model.predict(X_val)
         score = rmse(y_val, preds)
@@ -196,30 +198,70 @@ if __name__ == "__main__":
         help="Use stratified k-fold cross-validation",
     )
 
+    parser.add_argument(
+        "--embed_add_as_separate_columns",
+        type=bool,
+        default=False,
+        help="Add embeddings as separate columns",
+    )
+
     args = parser.parse_args()
 
-    if args.model_name in ["Ridge", "LightGBM"]:
-        data = preprocess_data_ridge(
-            args.train_path
+    # check if data is already prepared
+    x_path = Path(f"outputs/data/prepared_{args.task_name}_X.csv")
+    y_path = Path(f"outputs/data/prepared_{args.task_name}_y.csv")
+    cat_features_path = Path(f"outputs/data/prepared_{args.task_name}_cat_features.pkl")
+    embed_features_path = Path(f"outputs/data/prepared_{args.task_name}_embed_features.pkl")
+
+    x_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if x_path.exists() and y_path.exists() and cat_features_path.exists() and embed_features_path.exists():
+        print("Data is already prepared")
+        X = pd.read_csv(x_path)
+        y = pd.read_csv(y_path)
+        with open(cat_features_path, "rb") as f:
+            cat_features = pickle.load(f)
+        with open(embed_features_path, "rb") as f:
+            embed_features = pickle.load(f)
+        X = fill_missing_values(X, cat_features)
+        X.info()
+    else:
+        if args.model_name in ["Ridge", "LightGBM"]:
+            data = preprocess_data_ridge(
+                args.train_path
+            )
+        elif args.model_name == "CatBoost":
+            data = load_and_preprocess_data(
+                args.model_name,
+                args.train_path,
+                add_text_features=True,
+                add_image_features=False,
+                use_reduced_rubert_embeddings=False,
+                embed_add_as_separate_columns=args.embed_add_as_separate_columns,
+            )
+        X, y, cat_features, embed_features = (
+            data["X"],
+            data["y"],
+            data["cat_features"],
+            data["embed_features"],
         )
-    elif args.model_name == "CatBoost":
-        data = load_and_preprocess_data(
-            args.train_path,
-            add_text_features=True,
-            add_image_features=False,
-            use_reduced_rubert_embeddings=False,
-        )
-    X, y, cat_features, embed_features = (
-        data["X"],
-        data["y"],
-        data["cat_features"],
-        data["embed_features"],
-    )
+
+        # save data to csv
+        X.to_csv(x_path, index=False)
+        y.to_csv(y_path, index=False)
+        with open(cat_features_path, "wb") as f:
+            pickle.dump(cat_features, f)
+        with open(embed_features_path, "wb") as f:
+            pickle.dump(embed_features, f)
+
     print('-------')
-    print(X.head(2))
-    print(y.head(2))
-    print(f'cat_features: {cat_features}')
-    print(f'embed_features: {embed_features}')
+    from pprint import pprint
+    pprint(X.head(1))
+    pprint(y.head(1))
+    pprint(X.info())
+    pprint(y.info())
+    pprint(f'cat_features: {cat_features}')
+    pprint(f'embed_features: {embed_features}')
     print('-------')
 
     train_model(args.model_name, args.task_name, X, y, cat_features, embed_features, args.use_stratified_kfold)
