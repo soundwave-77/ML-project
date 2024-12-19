@@ -174,14 +174,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--task_name", type=str, required=True, help="Name of the ClearML task"
     )
+    parser.add_argument(
+        "--text_embeddings_type",
+        type=str,
+        default=None,
+        choices=["tfidf", "fasttext", "rubert", None],
+        help="Type of text embeddings to use: 'tfidf', 'fasttext', 'rubert', or None (default: None)",
+    )
+    parser.add_argument(
+        "--image_embeddings_type",
+        type=str,
+        default=None,
+        choices=["resnet", "clip", None],
+        help="Type of image embeddings to use: 'resnet', 'clip', or None (default: None)",
+    )
 
     args = parser.parse_args()
 
     data = load_and_preprocess_data(
         args.model_name,
         args.train_path,
-        add_text_features=False,
-        add_image_features=False,
+        args.text_embeddings_type,
+        args.image_embeddings_type
     )
     X, y = data["X"], data["y"]
     train_model(args.model_name, args.task_name, X, y)
