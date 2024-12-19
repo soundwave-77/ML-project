@@ -5,6 +5,9 @@ sys.path.append("../")
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
+from sklearn.decomposition import TruncatedSVD 
+
 
 from src.embeddings.loader import load_text_embeddings_json, load_embeddings, embedding_dict_to_df, load_json_embedding_as_dict
 
@@ -76,6 +79,7 @@ def load_and_preprocess_data(
     add_image_features: bool = False,
     use_reduced_rubert_embeddings: bool = False,
     embed_add_as_separate_columns: bool = False,
+    use_truncated_embeddings: bool = True
 ):
     # %%
     # data_path = "../data/raw/train.csv"
@@ -118,18 +122,42 @@ def load_and_preprocess_data(
             embed_df = df_with_nested_embeddings(embed_path, embed_name)
             df = df.join(embed_df, on='item_id')
 
-    # if add_image_features:
-    #     print("==== Adding image features ====")
-    #     # add image embeddings
-    #     embed_path = Path(
-    #         "~/Yandex.Disk/hse_ml_avito/vector_store/resnet/embeddings_train_merged.npz"
-    #     ).expanduser()
-    #     embeddings = load_embeddings(embed_path)
-    #     embeddings_df = df["item_id"].apply(lambda x: pd.Series(embeddings[x]))
-    #     embeddings_df = embeddings_df.rename(columns=lambda x: f"image_embedding_{x+1}")
-    #     df = df.join(embeddings_df, how="left")
+    if add_image_features:
+        print("==== Adding image features ====")
+        # embed_path = Path(
+        #     "~/Yandex.Disk/hse_ml_avito/vector_store/resnet/embeddings_train_merged.npz"
+        # ).expanduser()
+        # outputs/data/feat/clip_embeddings.npz
+        embed_path = Path(
+            "outputs/data/feat/clip_embeddings.npz"
+        ).expanduser()
+        
+        embeddings = load_embeddings(embed_path)
 
-    #     embed_features.append([c for c in embeddings_df.columns])
+        if use_truncated_embeddings:
+            tsvd = TruncatedSVD(32)
+            embed = tsvd.fit_transform(embeddings['embeddings'])
+        else:
+            embed = embeddings['embeddings']
+        
+        if embed_add_as_separate_columns:  # each embedding feature is a separate column
+            embed_df = pd.DataFrame(embed, index=embeddings['images'])
+            embed_cols = [f"image_embedding_{i+1}" for i in range(embed_df.shape[1])]
+            embed_df.columns = embed_cols
+            df = df.merge(embed_df, left_on='image', right_index=True, how='left')
+            df[embed_cols] = df[embed_cols].fillna(0)
+            df[embed_cols] = df[embed_cols].astype(np.float16)
+        else:
+            embed_features.append("resnet_image_embeddings")
+            embed_df = pd.DataFrame(list(embed), index=embeddings['images'])
+            df = df.merge(embed_df, left_on='image', right_index=True, how='left')
+            df[embed_cols] = df[embed_cols].fillna(0)
+            df[embed_cols] = df[embed_cols].astype(np.float16)
+
+            # embed_df = embedding_dict_to_df(embeddings)
+            # df = df.join(embed_df, on='item_id')
+            # embed_features.append([c for c in embeddings_df.columns])
+
     # %%
     # drop unused(for now) columns
     # 'params', 'price_log', 'deal_prob_cat',
