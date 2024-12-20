@@ -274,7 +274,7 @@ def main(
     print("-------")
 
     train_model(
-        model_name, task_name, X, y, cat_features, embed_features, use_stratified_kfold
+        model_name, task_name, X, y, cat_features, use_stratified_kfold
     )
 
 
