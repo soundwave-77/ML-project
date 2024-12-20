@@ -6,8 +6,7 @@ python scripts/train.py \
     --model_name CatBoost \
     --use_stratified_kfold False \
     --embed_add_as_separate_columns True \
-    --add_image_features True \
     --use_prep_data_cache False \
     --use_truncated_embeddings True \
     --text_embeddings_type tfidf \
-    --image_embeddings_type None
+    --image_embeddings_type clip
