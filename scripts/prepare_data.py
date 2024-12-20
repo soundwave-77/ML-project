@@ -5,6 +5,7 @@ sys.path.append("../")
 
 from pathlib import Path
 from typing import Optional
+import gc
 
 import numpy as np
 import pandas as pd
@@ -61,22 +62,6 @@ def df_with_text_features_as_separate_columns(df, embed_path: Path, embed_name: 
     embeddings_df = df["item_id"].apply(lambda x: pd.Series(text_embeddings[x]))
     embeddings_df = embeddings_df.rename(columns=lambda x: f"title_embedding_{x+1}")
     return embeddings_df
-
-
-def convert_to_classification_target(y, num_bins=5):
-    """
-    Convert regression target to classification target
-
-    Convert values from 0 to 1 to bin labels.
-
-    Parameters:
-    - y (pd.Series): Continuous target values ranging from 0 to 1.
-    - num_bins (int): Number of bins to use for classification.
-
-    Returns:
-    - pd.Series: Categorical target labels.
-    """
-    return (y.round(2) * 100).astype(int)
 
 
 def add_text_statistics(df):
@@ -154,6 +139,11 @@ def add_text_features(df, embedding_type, embed_add_as_separate_columns):
             [df.reset_index(drop=True), title_embeddings, description_embeddings],
             axis=1,
         )
+
+        del title_embeddings
+        del description_embeddings
+        gc.collect()
+
     elif embedding_type == "fasttext":
         # Load FastText embeddings
         title_embed_path = Path(
@@ -178,6 +168,11 @@ def add_text_features(df, embedding_type, embed_add_as_separate_columns):
             [df.reset_index(drop=True), title_embeddings, description_embeddings],
             axis=1,
         )
+
+        del title_embeddings
+        del description_embeddings
+        gc.collect()
+
     elif embedding_type == "rubert":
         # Load RuBERT embeddings
         title_embed_path = Path(
@@ -226,6 +221,8 @@ def add_text_features(df, embedding_type, embed_add_as_separate_columns):
             )
             df = df.join(embed_df, on="item_id")
 
+        del embed_df
+        gc.collect()
     else:
         raise ValueError(f"Unknown embedding type: {embedding_type}")
     return df, embed_features
@@ -256,15 +253,18 @@ def add_image_features(
     if use_truncated_embeddings:
         tsvd = TruncatedSVD(32)
         embed = tsvd.fit_transform(embeddings["embeddings"])
+        del tsvd
     else:
         embed = embeddings["embeddings"]
-
+    image_names = embeddings["images"]
+    del embeddings
+    gc.collect()
     print('truncated embeddings')
 
     embed_features = []
     if embed_add_as_separate_columns:  # each embedding feature is a separate column
         print('going to add separate columns')
-        embed_df = pd.DataFrame(embed, index=embeddings["images"])
+        embed_df = pd.DataFrame(embed, index=image_names)
         embed_cols = [f"image_embedding_{i+1}" for i in range(embed_df.shape[1])]
         embed_df.columns = embed_cols
         df = df.merge(embed_df, left_on="image", right_index=True, how="left")
@@ -273,11 +273,12 @@ def add_image_features(
     else:
         print('going to add as a single column')
         embed_features.append(f"{embedding_type}_image_embeddings")
-        embed_df = pd.DataFrame(list(embed), index=embeddings["images"])
+        embed_df = pd.DataFrame(list(embed), index=image_names)
         df = df.merge(embed_df, left_on="image", right_index=True, how="left")
         df[embed_cols] = df[embed_cols].fillna(0)
         df[embed_cols] = df[embed_cols].astype(np.float16)
-
+    del embed_df
+    gc.collect()
     return df, embed_features
 
 
@@ -337,6 +338,9 @@ def load_and_preprocess_data(
         )
         embed_features.append(embed_feat)
 
+    df = df.drop(columns=["title", "description"])
+    gc.collect()
+
     if image_embeddings_type is not None:
         df, embed_feat = add_image_features(
             df,
@@ -361,6 +365,9 @@ def load_and_preprocess_data(
 
     X = df.drop(columns=["deal_probability"])
     y = df["deal_probability"]
+
+    # X = X.apply(pd.to_numeric, errors='coerce', downcast='float')
+    # y = y.astype(np.float16)
 
     print("==== Data preprocessed successfully! ====")
 
