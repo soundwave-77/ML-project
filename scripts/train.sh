@@ -5,6 +5,7 @@ python scripts/train.py \
     --task_name clip_embed \
     --model_name CatBoost \
     --use_stratified_kfold False \
+    --use_hyperparameter_optimization True \
     --embed_add_as_separate_columns True \
     --use_prep_data_cache False \
     --use_truncated_embeddings True \

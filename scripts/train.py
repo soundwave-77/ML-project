@@ -7,6 +7,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import tyro
+import optuna
 from catboost import CatBoostRegressor, Pool
 from clearml import Task
 from lightgbm import LGBMRegressor, early_stopping, log_evaluation
@@ -26,11 +27,61 @@ if os.getenv("ENABLE_CLEARML", "0") == "0":
     Task.set_offline(True)
 
 
+def get_default_hyperparameters(model_name):
+    if model_name == "CatBoost":
+        return {
+            "metric_period": 50,
+            "early_stopping_rounds": 10,
+            "iterations": 1000,
+            "task_type": "GPU" if is_gpu_available() else "CPU",
+        }
+    elif model_name == "LightGBM":
+        return {
+            "objective": "regression",
+            "metric": "rmse",
+            "n_estimators": 1000,
+            "boosting_type": "gbdt",
+            "verbose": -1,
+        }
+    elif model_name == "Ridge":
+        return {
+            "alpha": 1.0
+        }
+    
+
+def get_hyperparameter_space(model_name, trial):
+    if model_name == "CatBoost":
+        return {
+            "iterations": trial.suggest_int("iterations", 500, 2000),
+            "depth": trial.suggest_int("depth", 4, 14),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+            "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
+            "metric_period": 50,
+            "early_stopping_rounds": 10,
+            "task_type": "GPU" if is_gpu_available() else "CPU",
+        }
+    elif model_name == "LightGBM":
+        return {
+            "n_estimators": trial.suggest_int("n_estimators", 500, 2000),
+            "max_depth": trial.suggest_int("max_depth", 4, 14),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+            "reg_lambda": trial.suggest_float("reg_lambda", 1.0, 10.0),
+            "objective": "regression",
+            "metric": "rmse",
+            "boosting_type": "gbdt",
+            "verbose": -1
+        }
+    elif model_name == "Ridge":
+        return {
+            "alpha": trial.suggest_float("alpha", 1e-3, 100, log=True)
+        }
+
+
 def train_catboost(
-    X_train, y_train, X_val=None, y_val=None, cat_features=None, embed_features=None
+    X_train, y_train, X_val=None, y_val=None, cat_features=None, embed_features=None, params=None
 ):
-    task_type = "GPU" if is_gpu_available() else "CPU"
-    print(f"Using {task_type} for training")
+    params = get_default_hyperparameters("CatBoost") if params is None else params
+    print(f"Using {params["task_type"]} for training")
 
     train_pool = Pool(
         X_train, y_train, cat_features=cat_features, embedding_features=embed_features
@@ -41,27 +92,20 @@ def train_catboost(
         )
     else:
         eval_pool = None
-    model = CatBoostRegressor(
-        metric_period=50, early_stopping_rounds=10, iterations=1000, task_type=task_type
-    )
+    model = CatBoostRegressor(**params)
     model.fit(train_pool, eval_set=eval_pool)
     return model
 
 
-def train_ridge(X_train, y_train):
-    model = make_pipeline(StandardScaler(), Ridge())
+def train_ridge(X_train, y_train, params=None):
+    params = get_default_hyperparameters("Ridge") if params is None else params
+    model = make_pipeline(StandardScaler(), Ridge(**params))
     model.fit(X_train, y_train)
     return model
 
 
-def train_lightgbm(X_train, y_train, X_val=None, y_val=None):
-    params = {
-        "objective": "regression",
-        "metric": "rmse",
-        "n_estimators": 1000,
-        "boosting_type": "gbdt",
-        "verbose": -1,
-    }
+def train_lightgbm(X_train, y_train, X_val=None, y_val=None, params=None):
+    params = get_default_hyperparameters("LightGBM") if params is None else params
 
     if X_val is not None and y_val is not None:
         eval_set = [(X_val, y_val)]
@@ -80,17 +124,79 @@ def train_lightgbm(X_train, y_train, X_val=None, y_val=None):
     return model
 
 
+def optimize_hyperparameters(
+    model_name,
+    X,
+    y,
+    FOLD_LIST,
+    cat_features,
+    embed_features
+):
+    print("--- Optimizing hyperparameters ---")
+    best_scores = []
+    best_model = None
+
+    def objective(trial):
+        params = get_hyperparameter_space(model_name, trial)
+        
+        scores = []
+        for fold_id, (train_idx, val_idx) in enumerate(FOLD_LIST):
+            X_train, y_train = X.loc[train_idx], y.loc[train_idx]
+            X_val, y_val = X.loc[val_idx], y.loc[val_idx]
+
+            if model_name == "CatBoost":
+                model = train_catboost(
+                    X_train,
+                    y_train,
+                    X_val,
+                    y_val,
+                    cat_features=cat_features,
+                    embed_features=embed_features,
+                    params=params
+                )
+            elif model_name == "Ridge":
+                model = train_ridge(X_train, y_train, params)
+            elif model_name == "LightGBM":
+                model = train_lightgbm(X_train, y_train, X_val, y_val, params)
+
+            # Ensure y_val is a Pandas Series
+            if isinstance(y_val, pd.DataFrame):
+                y_val = y_val.squeeze()
+            elif isinstance(y_val, np.ndarray) and y_val.ndim > 1:
+                y_val = y_val.ravel()
+
+            preds = model.predict(X_val)
+            score = rmse(y_val, preds)
+            mae = mean_absolute_error(y_val, preds)
+            r2 = r2_score(y_val, preds)
+            scores.append({"rmse": score, "mae": mae, "r2": r2})
+
+        mean_rmse = np.mean([score["rmse"] for score in scores])
+        nonlocal best_scores, best_model
+        if not best_scores or mean_rmse < np.mean([score["rmse"] for score in best_scores]):
+            best_scores = scores
+            best_model = model
+
+        return mean_rmse
+
+    study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=5)
+    print(f"Best hyperparameters: {study.best_params}")
+    return best_model, best_scores
+
+
 def train_model(
     model_name,
     task_name,
     X,
     y,
+    cat_features,
     embed_features=None,
     use_stratified_kfold=False,
+    use_hyperparameter_optimization=False
 ):
     # Initialize ClearML task
     task = Task.init(project_name="avito_sales_prediction", task_name=task_name)
-    cat_features = list(X.select_dtypes(include="object").columns)
 
     all_num_features = list(X.select_dtypes(include="number").columns)
 
@@ -110,7 +216,6 @@ def train_model(
     logger = task.get_logger()
 
     # Cross-validation
-    scores = []
     folds_num = 3
     if use_stratified_kfold:
         splitter = StratifiedKFold(n_splits=folds_num, shuffle=True, random_state=42)
@@ -121,35 +226,40 @@ def train_model(
         splitter = KFold(n_splits=folds_num, shuffle=True, random_state=42)
         FOLD_LIST = list(splitter.split(X, y))
 
-    for fold_id, (train_idx, val_idx) in enumerate(FOLD_LIST):
-        X_train, y_train = X.loc[train_idx], y.loc[train_idx]
-        X_val, y_val = X.loc[val_idx], y.loc[val_idx]
+    # Optuna hyperparameter optimization
+    if use_hyperparameter_optimization:
+        model, scores = optimize_hyperparameters(model_name, X, y, FOLD_LIST, cat_features, embed_features)
+    else:
+        scores = []
+        for fold_id, (train_idx, val_idx) in enumerate(FOLD_LIST):
+            X_train, y_train = X.loc[train_idx], y.loc[train_idx]
+            X_val, y_val = X.loc[val_idx], y.loc[val_idx]
 
-        if model_name == "CatBoost":
-            model = train_catboost(
-                X_train,
-                y_train,
-                X_val,
-                y_val,
-                cat_features=cat_features,
-                embed_features=embed_features,
-            )
-        elif model_name == "Ridge":
-            model = train_ridge(X_train, y_train)
-        elif model_name == "LightGBM":
-            model = train_lightgbm(X_train, y_train, X_val, y_val)
+            if model_name == "CatBoost":
+                model = train_catboost(
+                    X_train,
+                    y_train,
+                    X_val,
+                    y_val,
+                    cat_features=cat_features,
+                    embed_features=embed_features
+                )
+            elif model_name == "Ridge":
+                model = train_ridge(X_train, y_train)
+            elif model_name == "LightGBM":
+                model = train_lightgbm(X_train, y_train, X_val, y_val)
 
-        # Ensure y_val is a Pandas Series
-        if isinstance(y_val, pd.DataFrame):
-            y_val = y_val.squeeze()
-        elif isinstance(y_val, np.ndarray) and y_val.ndim > 1:
-            y_val = y_val.ravel()
+            # Ensure y_val is a Pandas Series
+            if isinstance(y_val, pd.DataFrame):
+                y_val = y_val.squeeze()
+            elif isinstance(y_val, np.ndarray) and y_val.ndim > 1:
+                y_val = y_val.ravel()
 
-        preds = model.predict(X_val)
-        score = rmse(y_val, preds)
-        mae = mean_absolute_error(y_val, preds)
-        r2 = r2_score(y_val, preds)
-        scores.append({"rmse": score, "mae": mae, "r2": r2})
+            preds = model.predict(X_val)
+            score = rmse(y_val, preds)
+            mae = mean_absolute_error(y_val, preds)
+            r2 = r2_score(y_val, preds)
+            scores.append({"rmse": score, "mae": mae, "r2": r2})
 
         # Log feature importances to ClearML
         if model_name == "CatBoost":
@@ -165,7 +275,7 @@ def train_model(
             task,
             task_name,
             model_name,
-            f"feature_importance_{fold_id}.csv",
+            f"feature_importance.csv",
         )
 
     scores = {
@@ -200,6 +310,7 @@ def main(
     task_name: str,
     model_name: str,
     use_stratified_kfold: bool,
+    use_hyperparameter_optimization: bool,
     embed_add_as_separate_columns: bool,
     use_truncated_embeddings: bool,
     use_prep_data_cache: bool,
@@ -208,7 +319,7 @@ def main(
 ):
     task_name = (
         task_name
-        + f"_{model_name=}_{use_stratified_kfold=}_{embed_add_as_separate_columns=}_{text_embeddings_type=}_{image_embeddings_type=}_{use_truncated_embeddings=}"
+        + f"_{model_name=}_{use_stratified_kfold=}_{use_hyperparameter_optimization=}_{embed_add_as_separate_columns=}_{text_embeddings_type=}_{image_embeddings_type=}_{use_truncated_embeddings=}"
     )
 
     # check if data is already prepared
@@ -262,19 +373,8 @@ def main(
         with open(embed_features_path, "wb") as f:
             pickle.dump(embed_features, f)
 
-    print("-------")
-    from pprint import pprint
-
-    pprint(X.head(1))
-    pprint(y.head(1))
-    pprint(X.info())
-    pprint(y.info())
-    pprint(f"cat_features: {cat_features}")
-    pprint(f"embed_features: {embed_features}")
-    print("-------")
-
     train_model(
-        model_name, task_name, X, y, cat_features, use_stratified_kfold
+        model_name, task_name, X, y, cat_features, embed_features, use_stratified_kfold, use_hyperparameter_optimization
     )
 
 
