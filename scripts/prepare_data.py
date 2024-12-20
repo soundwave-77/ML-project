@@ -358,8 +358,6 @@ def load_and_preprocess_data(
         "item_id",
         "user_id",
         "activation_date",
-        "title",
-        "description",
     ]
     df.drop(drop_cols, axis=1, inplace=True)
 
