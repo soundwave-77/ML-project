@@ -1,23 +1,12 @@
-# catboost
+export ENABLE_CLEARML=0
+
 python scripts/train.py \
     --train_path data/raw/train.csv \
-    --task_name catboost_image_statistics \
+    --task_name clip_embed \
     --model_name CatBoost \
-    --text_embeddings_type tfidf
-    --image_embeddings_type None
-
-# ridge
-# python scripts/train.py \
-#     --train_path data/raw/train.csv \
-#     --task_name ridge_baseline \
-#     --model_name Ridge \
-#     --text_embeddings_type tfidf
-#     --image_embeddings_type None
-
-# lightgbm
-# python scripts/train.py \
-#     --train_path data/raw/train.csv \
-#     --task_name lightgbm_baseline \
-#     --model_name LightGBM \
-#     --text_embeddings_type tfidf
-#     --image_embeddings_type None
+    --use_stratified_kfold False \
+    --embed_add_as_separate_columns True \
+    --use_prep_data_cache False \
+    --use_truncated_embeddings True \
+    --text_embeddings_type tfidf \
+    --image_embeddings_type clip
