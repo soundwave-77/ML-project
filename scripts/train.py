@@ -1,6 +1,7 @@
 import os
 import pickle
 from pathlib import Path
+from typing import Optional
 
 import joblib
 import numpy as np
@@ -11,7 +12,7 @@ from clearml import Task
 from lightgbm import LGBMRegressor, early_stopping, log_evaluation
 
 # local modules
-from prepare_data import fill_missing_values, load_and_preprocess_data
+from prepare_data import fill_missing_values, load_and_preprocess_data, preprocess_data_ridge
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import KFold, StratifiedKFold
@@ -84,15 +85,19 @@ def train_model(
     task_name,
     X,
     y,
-    cat_features=None,
     embed_features=None,
     use_stratified_kfold=False,
 ):
     # Initialize ClearML task
     task = Task.init(project_name="avito_sales_prediction", task_name=task_name)
-
-    num_features = list(X.select_dtypes(include="number").columns)
     cat_features = list(X.select_dtypes(include="object").columns)
+
+    all_num_features = list(X.select_dtypes(include="number").columns)
+
+    if embed_features is None:
+        num_features = all_num_features
+    else:
+        num_features = set(all_num_features) - set(embed_features)
 
     task.connect(
         {
@@ -196,13 +201,14 @@ def main(
     model_name: str,
     use_stratified_kfold: bool,
     embed_add_as_separate_columns: bool,
-    add_image_features: bool,
     use_truncated_embeddings: bool,
     use_prep_data_cache: bool,
+    text_embeddings_type: Optional[str],
+    image_embeddings_type: Optional[str]
 ):
     task_name = (
         task_name
-        + f"_{model_name=}_{use_stratified_kfold=}_{embed_add_as_separate_columns=}_{add_image_features=}_{use_truncated_embeddings=}"
+        + f"_{model_name=}_{use_stratified_kfold=}_{embed_add_as_separate_columns=}_{text_embeddings_type=}_{image_embeddings_type=}_{use_truncated_embeddings=}"
     )
 
     # check if data is already prepared
@@ -235,11 +241,11 @@ def main(
             data = load_and_preprocess_data(
                 model_name,
                 train_path,
-                add_text_features=True,
-                add_image_features=add_image_features,
+                text_embeddings_type=text_embeddings_type,
+                image_embeddings_type=image_embeddings_type,
                 use_reduced_rubert_embeddings=False,
-                embed_add_as_separate_columns=embed_add_as_separate_columns,
                 use_truncated_embeddings=use_truncated_embeddings,
+                embed_add_as_separate_columns=embed_add_as_separate_columns,
             )
         X, y, cat_features, embed_features = (
             data["X"],

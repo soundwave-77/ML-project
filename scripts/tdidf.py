@@ -12,24 +12,26 @@ class TfidfSVDModel:
         self.svd = TruncatedSVD(**svd_params) if svd_params else None
 
     def fit(self, texts):
-        self.tfidf.fit(texts)
+        tfidf_matrix = self.tfidf.fit_transform(texts)
+        if self.svd:
+            self.svd.fit(tfidf_matrix)
+            print(f"Explained variance ratio: {self.svd.explained_variance_ratio_.sum():.4f}")
         return self
 
     def transform(self, texts):
         tfidf_matrix = self.tfidf.transform(texts)
         if self.svd:
-            X = self.svd.fit_transform(tfidf_matrix)
-            print(f"Explained variance ratio: {self.svd.explained_variance_ratio_.sum()}")
-            return X
+            return self.svd.transform(tfidf_matrix)
         return tfidf_matrix
 
     def fit_transform(self, texts):
         tfidf_matrix = self.tfidf.fit_transform(texts)
         if self.svd:
-            X = self.svd.fit_transform(tfidf_matrix)
-            print(f"Explained variance ratio: {self.svd.explained_variance_ratio_.sum()}")
-            return X
+            self.svd.fit(tfidf_matrix)
+            print(f"Explained variance ratio: {self.svd.explained_variance_ratio_.sum():.4f}")
+            return self.svd.transform(tfidf_matrix)
         return tfidf_matrix
+
 
 
 def process_and_save_tfidf(
