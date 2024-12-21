@@ -10,6 +10,8 @@ import streamlit as st
 from catboost import CatBoostRegressor, Pool
 from PIL import Image
 from sklearn.decomposition import TruncatedSVD
+import shap
+import matplotlib.pyplot as plt
 
 sys.path.append("/home/qb/study/hse/ml/project/ML-project")
 
@@ -172,11 +174,17 @@ def preprocess_data(df, image):
 
 
 def predict(df, image):
-    # preprocess them
+    # Preprocess the data
     X = preprocess_data(df, image)
+    
     # Make predictions
     predictions = model.predict(X)
-    return predictions
+    
+    # Explain predictions
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X)
+    
+    return predictions, shap_values, X
 
 
 # ======= App Logic =======
@@ -230,10 +238,17 @@ if st.button("Оценить"):
                 "description": [text_input],
             }
         )
-        result = predict(df, image)
+        predictions, shap_values, X = predict(df, image)
 
-        st.success(result)
+        st.success(f"Предсказанная цена: {predictions[0]} ₽")
 
+        # Display the uploaded image
         st.image(image, caption="Загруженное изображение", use_container_width=True)
+
+        # Generate and display the SHAP summary plot
+        st.subheader("Объяснение предсказаний модели")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        shap.summary_plot(shap_values, X, plot_type="bar", show=False, ax=ax)
+        st.pyplot(fig)
     else:
         st.error("Заполните все поля")

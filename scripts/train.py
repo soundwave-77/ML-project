@@ -1,4 +1,12 @@
 import os
+
+if os.getenv("DEBUG", "0") == "1":
+	import debugpy
+	debugpy.listen(5678)
+	print("Waiting for debugger to attach...")
+	debugpy.wait_for_client()
+	print("Debugger Connected")
+
 import pickle
 from pathlib import Path
 from typing import Optional
@@ -204,11 +212,17 @@ def main(
     use_truncated_embeddings: bool,
     use_prep_data_cache: bool,
     text_embeddings_type: Optional[str],
-    image_embeddings_type: Optional[str]
+    image_embeddings_type: Optional[str],
+    use_image_quality_features: bool,
 ):
     task_name = (
         task_name
-        + f"_{model_name=}_{use_stratified_kfold=}_{embed_add_as_separate_columns=}_{text_embeddings_type=}_{image_embeddings_type=}_{use_truncated_embeddings=}"
+        + f"_{model_name}"
+        + f"_use_stratified_kfold={use_stratified_kfold}"
+        + f"_embed_add_as_separate_columns={embed_add_as_separate_columns}"
+        + f"_text_embeddings_type={text_embeddings_type}"
+        + f"_image_embeddings_type={image_embeddings_type}"
+        + f"_use_truncated_embeddings={use_truncated_embeddings}"
     )
 
     # check if data is already prepared
@@ -246,6 +260,7 @@ def main(
                 use_reduced_rubert_embeddings=False,
                 use_truncated_embeddings=use_truncated_embeddings,
                 embed_add_as_separate_columns=embed_add_as_separate_columns,
+                use_image_quality_features=use_image_quality_features,
             )
         X, y, cat_features, embed_features = (
             data["X"],
@@ -254,19 +269,19 @@ def main(
             data["embed_features"],
         )
 
-        # save data to csv
-        X.to_csv(x_path, index=False)
-        y.to_csv(y_path, index=False)
-        with open(cat_features_path, "wb") as f:
-            pickle.dump(cat_features, f)
-        with open(embed_features_path, "wb") as f:
-            pickle.dump(embed_features, f)
+        # # save data to csv
+        # X.to_csv(x_path, index=False)
+        # y.to_csv(y_path, index=False)
+        # with open(cat_features_path, "wb") as f:
+        #     pickle.dump(cat_features, f)
+        # with open(embed_features_path, "wb") as f:
+        #     pickle.dump(embed_features, f)
 
     print("-------")
     from pprint import pprint
 
-    pprint(X.head(1))
-    pprint(y.head(1))
+    # pprint(X.head(1))
+    # pprint(y.head(1))
     pprint(X.info())
     pprint(y.info())
     pprint(f"cat_features: {cat_features}")
@@ -274,7 +289,7 @@ def main(
     print("-------")
 
     train_model(
-        model_name, task_name, X, y, cat_features, embed_features, use_stratified_kfold
+        model_name, task_name, X, y, embed_features, use_stratified_kfold
     )
 
 
