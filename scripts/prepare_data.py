@@ -1,7 +1,7 @@
 # %%
-import sys
+# import sys
 
-sys.path.append("../")
+# sys.path.append("../")
 
 from pathlib import Path
 from typing import Optional
@@ -20,6 +20,47 @@ from src.embeddings.loader import (
 )
 
 pd.set_option("display.max_columns", None)
+
+
+import numpy as np
+
+
+def reduce_mem_usage(df):
+    """ iterate through all the columns of a dataframe and modify the data type
+        to reduce memory usage.        
+    """
+    start_mem = df.memory_usage().sum() / 1024**2
+    print('Memory usage of dataframe is {:.2f} MB'.format(start_mem))
+
+    for col in df.columns:
+        col_type = df[col].dtype.name
+
+        if col_type not in ['object', 'category']:
+            c_min = df[col].min()
+            c_max = df[col].max()
+            if str(col_type)[:3] == 'int':
+                if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
+                    df[col] = df[col].astype(np.int8)
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+                elif c_min > np.iinfo(np.int64).min and c_max < np.iinfo(np.int64).max:
+                    df[col] = df[col].astype(np.int64)  
+            else:
+                if c_min > np.finfo(np.float16).min and c_max < np.finfo(np.float16).max:
+                    df[col] = df[col].astype(np.float16)
+                elif c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+                else:
+                    df[col] = df[col].astype(np.float64)
+        # else: df[col] = df[col].astype('category')
+
+    end_mem = df.memory_usage().sum() / 1024**2
+    print('Memory usage after optimization is: {:.2f} MB'.format(end_mem))
+    print('Decreased by {:.1f}%'.format(100 * (start_mem - end_mem) / start_mem))
+
+    return df
 
 
 def fill_missing_values(df, cols):
@@ -233,14 +274,14 @@ def add_image_features(
 ):
     print("==== Adding image features ====")
     if embedding_type == "clip":
-        embed_path = Path("outputs/data/feat/clip_embeddings.npz").expanduser()
+        embed_path = Path("~/Yandex.Disk/hse_ml_avito/vector_store/clip/train.npz").expanduser()
     elif embedding_type == "resnet":
         embed_path = Path(
             "~/Yandex.Disk/hse_ml_avito/vector_store/resnet/embeddings_train_merged.npz"
         ).expanduser()
     elif embedding_type == "dinov2":
         embed_path = Path(
-            "~/Yandex.Disk/hse_ml_avito/vector_store/dinov2/embeddings_train_merged.npz"
+            "~/Yandex.Disk/hse_ml_avito/vector_store/dinov2/train.npz"
         ).expanduser()
     else:
         raise ValueError(f"Unknown embedding type: {embedding_type}")
@@ -290,6 +331,7 @@ def load_and_preprocess_data(
     use_reduced_rubert_embeddings: bool = False,
     embed_add_as_separate_columns: bool = False,
     use_truncated_embeddings: bool = True,
+    use_image_quality_features: bool = False,
 ):
     print("Parameters")
     print(f"model_name: {model_name}")
@@ -315,31 +357,26 @@ def load_and_preprocess_data(
     cat_features = df.select_dtypes(include="object").columns
     df = fill_missing_values(df, cat_features)
 
-    df = add_text_statistics(df)
-    img_stats_path = Path(
-        "~/Yandex.Disk/hse_ml_avito/image_statistics.parquet"
-    ).expanduser()
-    df = add_image_statistics(df, img_stats_path)
+    if text_embeddings_type is not None:
+        df = add_text_statistics(df)
+
+    if use_image_quality_features:
+        img_stats_path = Path(
+            "~/Yandex.Disk/hse_ml_avito/image_statistics.parquet"
+        ).expanduser()
+        df = add_image_statistics(df, img_stats_path)
 
     # Cosine similarity
-    cos_sim_path = Path(
-        "~/Yandex.Disk/hse_ml_avito/title_description_sim_train.csv"
-    ).expanduser()
-    df_sim = pd.read_csv(cos_sim_path)
-    df = pd.merge(df, df_sim, on="item_id", how="left")
+    if text_embeddings_type is not None:
+        cos_sim_path = Path(
+            "~/Yandex.Disk/hse_ml_avito/title_description_sim_train.csv"
+        ).expanduser()
+        df_sim = pd.read_csv(cos_sim_path)
+        df = pd.merge(df, df_sim, on="item_id", how="left")
 
     df = preprocess_data_for_model(df, model_name)
     # %%
     embed_features = []
-
-    if text_embeddings_type is not None:
-        df, embed_feat = add_text_features(
-            df, text_embeddings_type, embed_add_as_separate_columns
-        )
-        embed_features.append(embed_feat)
-
-    df = df.drop(columns=["title", "description"])
-    gc.collect()
 
     if image_embeddings_type is not None:
         df, embed_feat = add_image_features(
@@ -348,7 +385,20 @@ def load_and_preprocess_data(
             use_truncated_embeddings,
             embed_add_as_separate_columns,
         )
-        embed_features.append(embed_feat)
+        if len(embed_feat) > 0:
+            embed_features.append(embed_feat)
+
+    df = reduce_mem_usage(df)
+
+    if text_embeddings_type is not None:
+        df, embed_feat = add_text_features(
+            df, text_embeddings_type, embed_add_as_separate_columns
+        )
+        if len(embed_feat) > 0:
+            embed_features.append(embed_feat)
+
+    df = df.drop(columns=["title", "description"])
+    gc.collect()
 
     # %%
     # drop unused(for now) columns
@@ -358,10 +408,10 @@ def load_and_preprocess_data(
         "item_id",
         "user_id",
         "activation_date",
-        "title",
-        "description",
     ]
     df.drop(drop_cols, axis=1, inplace=True)
+
+    df = reduce_mem_usage(df)
 
     X = df.drop(columns=["deal_probability"])
     y = df["deal_probability"]
