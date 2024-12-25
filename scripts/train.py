@@ -1,4 +1,12 @@
 import os
+
+if os.getenv("DEBUG", "0") == "1":
+	import debugpy
+	debugpy.listen(5678)
+	print("Waiting for debugger to attach...")
+	debugpy.wait_for_client()
+	print("Debugger Connected")
+
 import pickle
 from pathlib import Path
 from typing import Optional
@@ -29,12 +37,21 @@ if os.getenv("ENABLE_CLEARML", "0") == "0":
 
 def get_default_hyperparameters(model_name):
     if model_name == "CatBoost":
+        # return {
+        #     "metric_period": 50,
+        #     "early_stopping_rounds": 10,
+        #     "iterations": 1000,
+        #     "task_type": "GPU" if is_gpu_available() else "CPU",
+        # }
         return {
             "metric_period": 50,
-            "early_stopping_rounds": 10,
-            "iterations": 1000,
+            "l2_leaf_reg": 5.332432327271731,
+            "learning_rate": 0.10455428370031629,
+            "iterations": 1773,
+            "depth": 8,
             "task_type": "GPU" if is_gpu_available() else "CPU",
         }
+
     elif model_name == "LightGBM":
         return {
             "objective": "regression",
@@ -81,7 +98,7 @@ def train_catboost(
     X_train, y_train, X_val=None, y_val=None, cat_features=None, embed_features=None, params=None
 ):
     params = get_default_hyperparameters("CatBoost") if params is None else params
-    print(f"Using {params["task_type"]} for training")
+    print(f"Using {params['task_type']} for training")
 
     train_pool = Pool(
         X_train, y_train, cat_features=cat_features, embedding_features=embed_features
@@ -190,7 +207,6 @@ def train_model(
     task_name,
     X,
     y,
-    cat_features,
     embed_features=None,
     use_stratified_kfold=False,
     use_hyperparameter_optimization=False
@@ -204,6 +220,8 @@ def train_model(
         num_features = all_num_features
     else:
         num_features = set(all_num_features) - set(embed_features)
+
+    cat_features = list(X.select_dtypes(include="object").columns)
 
     task.connect(
         {
@@ -315,11 +333,17 @@ def main(
     use_truncated_embeddings: bool,
     use_prep_data_cache: bool,
     text_embeddings_type: Optional[str],
-    image_embeddings_type: Optional[str]
+    image_embeddings_type: Optional[str],
+    use_image_quality_features: bool,
 ):
     task_name = (
         task_name
-        + f"_{model_name=}_{use_stratified_kfold=}_{use_hyperparameter_optimization=}_{embed_add_as_separate_columns=}_{text_embeddings_type=}_{image_embeddings_type=}_{use_truncated_embeddings=}"
+        + f"_{model_name}"
+        + f"_use_stratified_kfold={use_stratified_kfold}"
+        + f"_embed_add_as_separate_columns={embed_add_as_separate_columns}"
+        + f"_text_embeddings_type={text_embeddings_type}"
+        + f"_image_embeddings_type={image_embeddings_type}"
+        + f"_use_truncated_embeddings={use_truncated_embeddings}"
     )
 
     # check if data is already prepared
@@ -357,6 +381,7 @@ def main(
                 use_reduced_rubert_embeddings=False,
                 use_truncated_embeddings=use_truncated_embeddings,
                 embed_add_as_separate_columns=embed_add_as_separate_columns,
+                use_image_quality_features=use_image_quality_features,
             )
         X, y, cat_features, embed_features = (
             data["X"],
@@ -365,16 +390,27 @@ def main(
             data["embed_features"],
         )
 
-        # save data to csv
-        X.to_csv(x_path, index=False)
-        y.to_csv(y_path, index=False)
-        with open(cat_features_path, "wb") as f:
-            pickle.dump(cat_features, f)
-        with open(embed_features_path, "wb") as f:
-            pickle.dump(embed_features, f)
+        # # save data to csv
+        # X.to_csv(x_path, index=False)
+        # y.to_csv(y_path, index=False)
+        # with open(cat_features_path, "wb") as f:
+        #     pickle.dump(cat_features, f)
+        # with open(embed_features_path, "wb") as f:
+        #     pickle.dump(embed_features, f)
+
+    print("-------")
+    from pprint import pprint
+
+    # pprint(X.head(1))
+    # pprint(y.head(1))
+    pprint(X.info())
+    pprint(y.info())
+    pprint(f"cat_features: {cat_features}")
+    pprint(f"embed_features: {embed_features}")
+    print("-------")
 
     train_model(
-        model_name, task_name, X, y, cat_features, embed_features, use_stratified_kfold, use_hyperparameter_optimization
+        model_name, task_name, X, y, embed_features, use_stratified_kfold, use_hyperparameter_optimization
     )
 
 

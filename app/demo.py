@@ -1,7 +1,7 @@
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-
+import logging
 import clip
 import joblib
 import numpy as np
@@ -9,9 +9,14 @@ import pandas as pd
 import streamlit as st
 from catboost import CatBoostRegressor, Pool
 from PIL import Image
-from sklearn.decomposition import TruncatedSVD
+import shap
+from scripts.prepare_data import fill_missing_values, add_text_statistics, preprocess_data_for_model
+from scripts.extract_image_statistics import process_image
+from scripts.cos_sim import compute_title_description_sim
+from streamlit_shap import st_shap
 
-sys.path.append("/home/qb/study/hse/ml/project/ML-project")
+
+# sys.path.append("/home/qb/study/hse/ml/project/ML-project")
 
 
 @dataclass
@@ -27,8 +32,8 @@ st.set_page_config(
 
 # =========== Preparing =========================
 # TODO: later use relative path for artifacts
-CKPT_PATH = Path("model.cbm")
-SAVE_PATH = Path("outputs/demo")
+CKPT_PATH = Path("~/Yandex.Disk/hse_ml_avito/checkpoints/final_model.cbm").expanduser()
+SAVE_PATH = Path("~/Yandex.Disk/hse_ml_avito/demo").expanduser()
 
 
 @st.cache_data
@@ -45,6 +50,7 @@ get_artifacts()
 
 @st.cache_resource
 def get_ctb_model():
+    print("Loading Catboost Model")  # logging.debug
     # load model and cache it
     model = CatBoostRegressor()
     model.load_model(CKPT_PATH)
@@ -53,6 +59,7 @@ def get_ctb_model():
 
 @st.cache_resource
 def get_clip_model():
+    logging.debug("Loading clip")
     device = "cpu"
     model, preprocess = clip.load("ViT-B/32", device=device)
     return model, preprocess
@@ -60,11 +67,19 @@ def get_clip_model():
 
 @st.cache_resource
 def get_tfidf_vectorizer():
+    print("Loading tfidf") # logging.debug
     # load vectorizer and cache it
     # path = Path("/home/qb/Yandex.Disk/hse_ml_avito/vector_store/tfidf/title_tfidf_svd_model.pkl")
     path = Path(
-        "/home/qb/Yandex.Disk/hse_ml_avito/vector_store/tfidf/title_description_tfidf_svd_model.pkl"
-    )
+        "~/Yandex.Disk/hse_ml_avito/vector_store/tfidf/title_description_tfidf_svd_model.pkl"
+    ).expanduser()
+    return joblib.load(path)
+
+
+def load_tsvd_img_embeddings():
+    path = Path(
+        "~/Yandex.Disk/hse_ml_avito/vector_store/clip/tsvd_img_embeddings.joblib"
+    ).expanduser()
     return joblib.load(path)
 
 
@@ -128,7 +143,7 @@ category_list = get_category_list()
 image_classes = get_image_classes()
 user_type_list = get_user_type_list()
 args = Arguments()
-cat_features = [
+CAT_FEATURES = [
     "region",
     "city",
     "parent_category_name",
@@ -137,46 +152,70 @@ cat_features = [
     "param_2",
     "param_3",
     "user_type",
-    "image_top1",
+    "image_top_1",
 ]
 
 # =========== Preprocessing Functions =========================
 
-
 def preprocess_data(df, image):
-    # obtain text embeddings
-    text_features = tfidf_vectorizer.transform(df["title"])
+    cat_features = list(df.select_dtypes(include="object").columns)
+    df = fill_missing_values(df, cat_features)
+    df = add_text_statistics(df)
+    # add image statistics
+    stats = process_image(None, image)
+
+    for key in stats.keys():
+        df[key] = stats[key]
+
+    # obtain title embeddings
+    title_embeddings = tfidf_vectorizer.transform(df["title"])
+    description_embeddings = tfidf_vectorizer.transform(df["description"])
+
+    # compute title-description cosine similarity
+    cos_sim = compute_title_description_sim(title_embeddings, description_embeddings)
+
+    df["title_description_cos_sim"] = cos_sim
+
+    df = preprocess_data_for_model(df, model_name="CatBoost")
 
     # obtain image embeddings
     image_features = get_image_embedding(image)
-    tsvd = TruncatedSVD(32)
-    image_features = tsvd.fit_transform(image_features)
+    tsvd = load_tsvd_img_embeddings()
+    image_features = tsvd.transform(image_features)
+    embed_df = pd.DataFrame(image_features)
+    embed_cols = [f"image_embedding_{i+1}" for i in range(embed_df.shape[1])]
+    embed_df.columns = embed_cols
+    df = df.merge(embed_df, left_index=True, right_index=True)
 
-    if args.embed_add_as_separate_columns:
-        embed_df = pd.DataFrame(text_features)
-        embed_cols = [f"title_embedding_{i+1}" for i in range(embed_df.shape[1])]
-        embed_df.columns = embed_cols
-        df = df.merge(embed_df, left_index=True, right_index=True)
+    embed_df = pd.DataFrame(title_embeddings)
+    embed_cols = [f"title_embedding_{i}" for i in range(embed_df.shape[1])]
+    embed_df.columns = embed_cols
+    df = df.merge(embed_df, left_index=True, right_index=True)
 
-        # df["text_features"] = text_features
-        # df["image_features"] = image_features
-    else:
-        df["combined_features"] = np.concatenate(
-            [text_features, image_features], axis=1
-        )
-    st.write(df.columns)
-    df.drop(columns=["title", "description"], inplace=True)
+    embed_df = pd.DataFrame(description_embeddings)
+    embed_cols = [f"description_embedding_{i}" for i in range(embed_df.shape[1])]
+    embed_df.columns = embed_cols
+    df = df.merge(embed_df, left_index=True, right_index=True)
 
-    pool = Pool(df, cat_features=cat_features)
-    return pool
+    # st.write(df.columns)
+    df.drop(columns=["title", "description", "image"], inplace=True)
+    # cat_features = list(df.select_dtypes(include="object").columns)
+    pool = Pool(df, cat_features=CAT_FEATURES)
+    return pool, df
 
 
 def predict(df, image):
-    # preprocess them
-    X = preprocess_data(df, image)
+    # Preprocess the data
+    X, df = preprocess_data(df, image)
+    
     # Make predictions
     predictions = model.predict(X)
-    return predictions
+    
+    # Explain predictions
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X)
+    
+    return predictions, shap_values, X, df, explainer
 
 
 # ======= App Logic =======
@@ -188,19 +227,21 @@ st.write(
 
 title_input = st.text_input("Название товара")
 text_input = st.text_area("Описание товара")
-region_input = st.selectbox("Регион", region_list)
-city_input = st.selectbox("Город", city_list)
-parent_category_input = st.selectbox("Родительская категория", parent_category_list)
-category_input = st.selectbox("Категория", category_list)
-param1_input = st.number_input("Параметр 1", min_value=0, max_value=100, value=0)
-param2_input = st.number_input("Параметр 2", min_value=0, max_value=100, value=0)
-param3_input = st.number_input("Параметр 3", min_value=0, max_value=100, value=0)
-item_seq_input = st.number_input(
-    "Порядковый номер товара у продавца", min_value=0, max_value=100, value=0
-)
 price_input = st.number_input("Цена", min_value=0, max_value=10_000_000, value=0)
-user_type_input = st.selectbox("Тип пользователя", ["Частное лицо", "Компания"])
-image_top1_input = st.selectbox("Топ-1 изображение", image_classes)
+
+with st.expander("Дополнительные параметры"):
+    region_input = st.selectbox("Регион", region_list)
+    city_input = st.selectbox("Город", city_list)
+    parent_category_input = st.selectbox("Родительская категория", parent_category_list)
+    category_input = st.selectbox("Категория", category_list)
+    param1_input = st.number_input("Параметр 1", min_value=0, max_value=100, value=0)
+    param2_input = st.number_input("Параметр 2", min_value=0, max_value=100, value=0)
+    param3_input = st.number_input("Параметр 3", min_value=0, max_value=100, value=0)
+    item_seq_input = st.number_input(
+        "Порядковый номер товара у продавца", min_value=0, max_value=100, value=1
+    )
+    user_type_input = st.selectbox("Тип пользователя", ["Частное лицо", "Компания"])
+    image_top1_input = st.selectbox("Топ-1 изображение", image_classes)
 
 
 image_input = st.file_uploader(
@@ -225,15 +266,24 @@ if st.button("Оценить"):
                 "price": [price_input],
                 "item_seq_number": [item_seq_input],
                 "user_type": [user_type_input],
-                "image_top1": [image_top1_input],
+                "image_top_1": [image_top1_input],
                 "title": [title_input],
                 "description": [text_input],
             }
         )
-        result = predict(df, image)
+        predictions, shap_values, X, X_display, explainer = predict(df, image)
 
-        st.success(result)
+        st.success(f"Предсказанная вероятность продажи: {predictions[0]:.2f}")
 
+        # Display the uploaded image
         st.image(image, caption="Загруженное изображение", use_container_width=True)
+
+        # Generate and display the SHAP summary plot
+        st.subheader("Объяснение предсказаний модели")
+
+        # fig, ax = plt.subplots(figsize=(10, 6))
+        st_shap(shap.force_plot(explainer.expected_value, shap_values[0, ...], X_display.iloc[0, :]))
+        # shap.summary_plot(shap_values, X, feature_names=X.columns, plot_type="bar", show=False)
+        # st.pyplot(fig)
     else:
         st.error("Заполните все поля")
