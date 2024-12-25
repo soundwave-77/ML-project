@@ -14,3 +14,7 @@ matplotlib~=3.9.3
 Jinja2~=3.1.4
 torch~=2.5.1
 torchvision~=0.20.1
+yadisk
+clip
+python-dotenv
+shap

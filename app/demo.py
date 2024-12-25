@@ -15,7 +15,10 @@ from scripts.extract_image_statistics import process_image
 from scripts.cos_sim import compute_title_description_sim
 from streamlit_shap import st_shap
 
-
+from dotenv import load_dotenv
+import os
+import yadisk
+load_dotenv()
 # sys.path.append("/home/qb/study/hse/ml/project/ML-project")
 
 
@@ -32,17 +35,32 @@ st.set_page_config(
 
 # =========== Preparing =========================
 # TODO: later use relative path for artifacts
-CKPT_PATH = Path("~/Yandex.Disk/hse_ml_avito/checkpoints/final_model.cbm").expanduser()
-SAVE_PATH = Path("~/Yandex.Disk/hse_ml_avito/demo").expanduser()
+REMOTE_CKPT_PATH = "/hse_ml_avito/checkpoints/final_model.cbm"
+REMOTE_ARTIFACTS_PATH = "/hse_ml_avito/demo"
+LOCAL_ARTIFACTS_PATH = "artifacts"
+Path(LOCAL_ARTIFACTS_PATH).mkdir(parents=True, exist_ok=True)
 
 
 @st.cache_data
 def get_artifacts():
     """Download artifacts from yandex disk"""
     # list of regions
-    # download catboost model
-    # download tfidf vectorizer
-    pass
+    yd_token = os.getenv("YANDEX_DISK_TOKEN")
+    client = yadisk.Client(token=yd_token)
+    
+    with client:
+        file_names = [obj.name for obj in client.listdir(REMOTE_ARTIFACTS_PATH)]
+        for file_name in file_names:
+            client.download(REMOTE_ARTIFACTS_PATH + "/" + file_name, LOCAL_ARTIFACTS_PATH + "/" + file_name)
+
+        # download catboost model
+        client.download(REMOTE_CKPT_PATH, LOCAL_ARTIFACTS_PATH + "/final_model.cbm")
+
+        # download tfidf vectorizer
+        client.download("/hse_ml_avito/vector_store/tfidf/title_description_tfidf_svd_model.pkl", LOCAL_ARTIFACTS_PATH + "/title_description_tfidf_svd_model.pkl")
+
+        # download tsvd image embeddings
+        client.download("/hse_ml_avito/vector_store/clip/tsvd_img_embeddings.joblib", LOCAL_ARTIFACTS_PATH + "/tsvd_img_embeddings.joblib")
 
 
 get_artifacts()
@@ -53,7 +71,7 @@ def get_ctb_model():
     print("Loading Catboost Model")  # logging.debug
     # load model and cache it
     model = CatBoostRegressor()
-    model.load_model(CKPT_PATH)
+    model.load_model(LOCAL_ARTIFACTS_PATH + "/final_model.cbm")
     return model
 
 
@@ -71,14 +89,14 @@ def get_tfidf_vectorizer():
     # load vectorizer and cache it
     # path = Path("/home/qb/Yandex.Disk/hse_ml_avito/vector_store/tfidf/title_tfidf_svd_model.pkl")
     path = Path(
-        "~/Yandex.Disk/hse_ml_avito/vector_store/tfidf/title_description_tfidf_svd_model.pkl"
+        LOCAL_ARTIFACTS_PATH + "/title_description_tfidf_svd_model.pkl"
     ).expanduser()
     return joblib.load(path)
 
 
 def load_tsvd_img_embeddings():
     path = Path(
-        "~/Yandex.Disk/hse_ml_avito/vector_store/clip/tsvd_img_embeddings.joblib"
+        LOCAL_ARTIFACTS_PATH + "/tsvd_img_embeddings.joblib"
     ).expanduser()
     return joblib.load(path)
 
@@ -91,37 +109,37 @@ def read_list(file_path: str) -> list[str]:
 @st.cache_data
 def get_region_list() -> list[str]:
     # load region list and cache it
-    return read_list(SAVE_PATH / "region_list.txt")
+    return read_list(LOCAL_ARTIFACTS_PATH + "/region_list.txt")
 
 
 @st.cache_data
 def get_category_list() -> list[str]:
     # load category list and cache it
-    return read_list(SAVE_PATH / "category_list.txt")
+    return read_list(LOCAL_ARTIFACTS_PATH + "/category_list.txt")
 
 
 @st.cache_data
 def get_image_classes() -> list[str]:
     # load image classes and cache it
-    return read_list(SAVE_PATH / "image_class_list.txt")
+    return read_list(LOCAL_ARTIFACTS_PATH + "/image_class_list.txt")
 
 
 @st.cache_data
 def get_city_list() -> list[str]:
     # load city list and cache it
-    return read_list(SAVE_PATH / "city_list.txt")
+    return read_list(LOCAL_ARTIFACTS_PATH + "/city_list.txt")
 
 
 @st.cache_data
 def get_parent_category_list() -> list[str]:
     # load parent category list and cache it
-    return read_list(SAVE_PATH / "parent_category_list.txt")
+    return read_list(LOCAL_ARTIFACTS_PATH + "/parent_category_list.txt")
 
 
 @st.cache_data
 def get_user_type_list() -> list[str]:
     # load user type list and cache it
-    return read_list(SAVE_PATH / "user_type_list.txt")
+    return read_list(LOCAL_ARTIFACTS_PATH + "/user_type_list.txt")
 
 
 def get_image_embedding(image: Image) -> np.ndarray:
