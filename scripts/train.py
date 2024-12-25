@@ -37,12 +37,21 @@ if os.getenv("ENABLE_CLEARML", "0") == "0":
 
 def get_default_hyperparameters(model_name):
     if model_name == "CatBoost":
+        # return {
+        #     "metric_period": 50,
+        #     "early_stopping_rounds": 10,
+        #     "iterations": 1000,
+        #     "task_type": "GPU" if is_gpu_available() else "CPU",
+        # }
         return {
             "metric_period": 50,
-            "early_stopping_rounds": 10,
-            "iterations": 1000,
+            "l2_leaf_reg": 5.332432327271731,
+            "learning_rate": 0.10455428370031629,
+            "iterations": 1773,
+            "depth": 8,
             "task_type": "GPU" if is_gpu_available() else "CPU",
         }
+
     elif model_name == "LightGBM":
         return {
             "objective": "regression",
@@ -89,7 +98,7 @@ def train_catboost(
     X_train, y_train, X_val=None, y_val=None, cat_features=None, embed_features=None, params=None
 ):
     params = get_default_hyperparameters("CatBoost") if params is None else params
-    print(f"Using {params["task_type"]} for training")
+    print(f"Using {params['task_type']} for training")
 
     train_pool = Pool(
         X_train, y_train, cat_features=cat_features, embedding_features=embed_features
@@ -198,7 +207,6 @@ def train_model(
     task_name,
     X,
     y,
-    cat_features,
     embed_features=None,
     use_stratified_kfold=False,
     use_hyperparameter_optimization=False
@@ -212,6 +220,8 @@ def train_model(
         num_features = all_num_features
     else:
         num_features = set(all_num_features) - set(embed_features)
+
+    cat_features = list(X.select_dtypes(include="object").columns)
 
     task.connect(
         {

@@ -72,32 +72,38 @@ def calculate_contrast(img_tensor):
 
 
 # Function to process a single image
-def process_image(image_path):
-    try:
+def process_image(image_path, image_array):
+    # try:
+    if image_array is None:
+        print('reading from file')
         img = Image.open(image_path).convert('RGB')
-        img_tensor = transform(img).to(device)
+    else:
+        print('reading from array')
+        img = image_array
 
-        mean_rgb = calculate_mean_rgb(img_tensor)
-        whiteness = calculate_whiteness(img_tensor)
-        dullness = calculate_dullness(img_tensor)
-        brightness = calculate_brightness(img_tensor)
-        contrast = calculate_contrast(img_tensor)
+    img_tensor = transform(img).to(device)
 
-        clean_file_name = Path(image_path).stem
+    mean_rgb = calculate_mean_rgb(img_tensor)
+    whiteness = calculate_whiteness(img_tensor)
+    dullness = calculate_dullness(img_tensor)
+    brightness = calculate_brightness(img_tensor)
+    contrast = calculate_contrast(img_tensor)
 
-        return {
-            "image": os.path.basename(image_path),
-            "mean_r": mean_rgb[0].item(),
-            "mean_g": mean_rgb[1].item(),
-            "mean_b": mean_rgb[2].item(),
-            "whiteness": whiteness,
-            "dullness": dullness,
-            "brightness": brightness,
-            "contrast": contrast
-        }
-    except Exception as e:
-        print(f"Error processing image {image_path}: {e}")
-        return None
+    # clean_file_name = Path(image_path).stem
+
+    return {
+        "image": os.path.basename(image_path) if image_path else None,
+        "mean_r": mean_rgb[0].item(),
+        "mean_g": mean_rgb[1].item(),
+        "mean_b": mean_rgb[2].item(),
+        "whiteness": whiteness,
+        "dullness": dullness,
+        "brightness": brightness,
+        "contrast": contrast
+    }
+    # except Exception as e:
+    #     print(f"Error processing image {image_path}: {e}")
+    #     return None
     
 
 # Example usage

@@ -10,7 +10,7 @@ import gc
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import TruncatedSVD
-
+import joblib
 from src.embeddings.loader import (
     embedding_dict_to_df,
     load_embeddings,
@@ -294,6 +294,8 @@ def add_image_features(
     if use_truncated_embeddings:
         tsvd = TruncatedSVD(32)
         embed = tsvd.fit_transform(embeddings["embeddings"])
+        joblib.dump(tsvd, "tsvd_img_embeddings.joblib")
+
         del tsvd
     else:
         embed = embeddings["embeddings"]
