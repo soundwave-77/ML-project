@@ -1,16 +1,16 @@
 streamlit~=1.40.1
-pillow~=11.0.0
+pillow~=11.1.0
 clearml
 catboost
-scikit-learn~=1.5.2
+scikit-learn~=1.6.0
 pandas~=2.2.3
-numpy~=2.1.3
+numpy~=2.2.0
 tqdm~=4.67.1
 nltk~=3.9.1
 scipy
 optuna
 joblib~=1.4.2
-matplotlib~=3.9.3
+matplotlib~=3.10.1
 Jinja2~=3.1.4
 torch~=2.5.1
 torchvision~=0.20.1
@@ -18,3 +18,6 @@ yadisk
 clip
 python-dotenv
 shap
+debugpy~=1.8.11
+fasttext~=0.9.3
+razdel~=0.5.0
